@@ -1,0 +1,969 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>متابعة التسميع</title>
+<style>
+:root{
+  --green:#1e7a46; --green-dark:#155c34; --green-light:#e6f4ec;
+  --bg:#f4f7f5; --card:#ffffff; --line:#e2e8e4;
+  --txt:#22302a; --muted:#7c8a83; --red:#c0392b; --amber:#fff7e0;
+  --blue:#2980b9; --blue-light:#eaf2fb;
+  --purple:#8e44ad; --purple-light:#f5eafb;
+}
+*{box-sizing:border-box; margin:0; padding:0;
+  font-family:"Segoe UI", Tahoma, "Noto Naskh Arabic", Arial, sans-serif;}
+body{background:var(--bg); color:var(--txt); min-height:100vh;}
+header{background:var(--green); color:#fff; padding:12px 16px;
+  display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;}
+header h1{font-size:1.2rem;}
+nav{display:flex; gap:6px;}
+nav button{background:rgba(255,255,255,.18); border:none; color:#fff;
+  padding:8px 18px; border-radius:8px; cursor:pointer; font-size:.95rem;}
+nav button.active{background:#fff; color:var(--green-dark); font-weight:700;}
+main{max-width:780px; margin:0 auto; padding:14px;}
+.card{background:var(--card); border:1px solid var(--line); border-radius:12px;
+  padding:14px; margin-bottom:12px;}
+button.primary{background:var(--green); color:#fff; border:none; padding:9px 18px;
+  border-radius:8px; cursor:pointer; font-size:.95rem;}
+button.primary:hover{background:var(--green-dark);}
+button.danger{background:none; border:1px solid var(--red); color:var(--red);
+  padding:5px 12px; border-radius:8px; cursor:pointer; font-size:.85rem;}
+button.ghost{background:none; border:1px solid var(--line); color:var(--txt);
+  padding:6px 12px; border-radius:8px; cursor:pointer;}
+input[type=text], input[type=number], select{
+  padding:9px 10px; border:1px solid var(--line); border-radius:8px;
+  font-size:.95rem; background:#fff; color:var(--txt); width:100%;}
+.row{display:flex; gap:8px; align-items:center; flex-wrap:wrap;}
+.week-nav{display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;}
+.week-nav .label{font-weight:700; font-size:1rem;}
+.week-nav button{background:#fff; border:1px solid var(--line); border-radius:8px;
+  padding:6px 14px; cursor:pointer; font-size:1rem;}
+.stats{color:var(--muted); font-size:.85rem; margin-bottom:10px;}
+.person-row{display:flex; flex-direction:column; gap:8px; padding:12px 0;
+  border-bottom:1px solid var(--line);}
+.person-row:last-child{border-bottom:none;}
+.person-head{display:flex; justify-content:space-between; align-items:center;}
+.person-name{font-weight:700; cursor:pointer; font-size:1.02rem;}
+.person-name:hover{color:var(--green);}
+.chip{display:inline-flex; align-items:center; gap:6px; padding:6px 12px;
+  border-radius:20px; font-size:.88rem; cursor:pointer; user-select:none;
+  border:1px solid var(--line); background:#fafcfa;}
+.chip.done{background:var(--green-light); border-color:var(--green); color:var(--green-dark);}
+.chip.absent{background:#fde8e8; border-color:var(--red); color:var(--red);}
+.chip .x{color:var(--muted); font-weight:700; padding:0 2px;}
+.chip .x:hover{color:var(--red);}
+.empty{color:var(--muted); font-size:.88rem;}
+ul.people{list-style:none;}
+ul.people li{display:flex; justify-content:space-between; align-items:center;
+  padding:11px 4px; border-bottom:1px solid var(--line);}
+ul.people li:last-child{border-bottom:none;}
+.assign-item{display:flex; justify-content:space-between; align-items:center;
+  padding:9px 4px; border-bottom:1px solid var(--line); gap:8px;}
+.assign-item:last-child{border-bottom:none;}
+.status-btn{border:none; border-radius:20px; padding:6px 14px; cursor:pointer; font-size:.85rem;}
+.status-btn.done{background:var(--green-light); color:var(--green-dark);}
+.status-btn.absent{background:#fde8e8; color:var(--red);}
+.status-btn.pending{background:#f1f1f1; color:#666;}
+.week-title{font-weight:700; margin:14px 0 4px; color:var(--green-dark); font-size:.92rem;}
+.board-wrap{overflow-x:auto; padding:8px;}
+table.board{border-collapse:collapse; width:100%; min-width:680px;}
+table.board th, table.board td{border:1px solid var(--line); padding:5px 4px;
+  vertical-align:top; text-align:center;}
+table.board th{background:var(--green-light); color:var(--green-dark);
+  font-size:.8rem; white-space:nowrap; padding:7px 4px;}
+table.board th.today{background:var(--green); color:#fff;}
+table.board td.pname{font-weight:700; white-space:nowrap; text-align:right;
+  background:#fafcfa; cursor:pointer; padding:8px 8px;}
+table.board td.pname:hover{color:var(--green);}
+table.board td{min-width:82px;}
+.cellchips{display:flex; flex-direction:column; gap:3px; align-items:stretch;}
+.chip.small{padding:3px 7px; font-size:.76rem; border-radius:12px; justify-content:center;}
+.addday{border:none; background:none; color:#b9c6bf; cursor:pointer;
+  font-size:.95rem; padding:1px 4px; border-radius:6px;}
+.addday:hover{color:var(--green); background:var(--green-light);}
+dialog{border:none; border-radius:14px; padding:18px; width:min(420px, 92vw);}
+dialog::backdrop{background:rgba(0,0,0,.35);}
+dialog h3{margin-bottom:12px;}
+dialog .field{margin-bottom:10px;}
+dialog label{display:block; font-size:.85rem; margin-bottom:4px; color:var(--muted);}
+.hint{font-size:.78rem; color:var(--muted); margin-top:3px;}
+.back{color:var(--green); cursor:pointer; font-size:.9rem; margin-bottom:10px; display:inline-block;}
+
+/* ═══════ أنماط جديد vs مراجعة ═══════ */
+.type-toggle{display:flex; gap:0; border-radius:10px; overflow:hidden; border:1px solid var(--line); margin-top:2px;}
+.type-toggle label{padding:9px 16px; cursor:pointer; font-size:.9rem; text-align:center; flex:1;
+  background:#f5f5f5; transition:all .15s; margin:0;}
+.type-toggle input{display:none;}
+.type-toggle label.sel-new{background:var(--blue-light); color:var(--blue); font-weight:700; border-color:var(--blue);}
+.type-toggle label.sel-review{background:var(--purple-light); color:var(--purple); font-weight:700; border-color:var(--purple);}
+
+.type-badge{font-size:.62rem; padding:1px 5px; border-radius:6px; font-weight:700; display:inline-block; vertical-align:middle;}
+.type-badge.new-badge{background:var(--blue); color:#fff;}
+.type-badge.review-badge{background:var(--purple); color:#fff;}
+
+.chip.small.type-new{border-right:3px solid var(--blue); background:var(--blue-light);}
+.chip.small.type-review{border-right:3px solid var(--purple); background:var(--purple-light);}
+.chip.small.type-new.done{background:#c8dff3;}
+.chip.small.type-review.done{background:#e0c8f3;}
+.chip.small.type-new.absent, .chip.small.type-review.absent{background:#fde8e8; border-right-color:var(--red);}
+
+.assign-item.type-new{border-right:4px solid var(--blue);}
+.assign-item.type-review{border-right:4px solid var(--purple);}
+
+/* ═══════ التكرار والتعديل ═══════ */
+.chip .ed{color:var(--muted); font-weight:700; padding:0 2px;}
+.chip .ed:hover{color:var(--blue);}
+.rep-badge{font-size:.62rem; padding:1px 5px; border-radius:6px; font-weight:700;
+  background:#eef3f0; color:#5b6b64; display:inline-block; vertical-align:middle;}
+.repeat-box{background:#fafcfa; border:1px dashed var(--line); border-radius:10px;
+  padding:10px 12px; margin-bottom:10px;}
+.repeat-box .box-title{font-weight:700; font-size:.92rem; color:var(--green-dark); margin-bottom:8px;}
+.repeat-presets{display:flex; gap:6px; flex-wrap:wrap; margin-top:6px;}
+.repeat-presets button{background:#fff; border:1px solid var(--line); border-radius:16px;
+  padding:4px 10px; font-size:.78rem; cursor:pointer;}
+.repeat-presets button:hover{border-color:var(--green); color:var(--green);}
+button.edit{background:none; border:1px solid var(--blue); color:var(--blue);
+  padding:5px 12px; border-radius:8px; cursor:pointer; font-size:.85rem;}
+button.edit:hover{background:var(--blue-light);}
+.hdr-code{background:rgba(255,255,255,.2); padding:3px 9px; border-radius:8px;
+  font-size:.78rem; letter-spacing:2px; direction:ltr; cursor:pointer; font-weight:700;}
+.hdr-code:hover{background:rgba(255,255,255,.35);}
+
+/* ═══════ شاشة المزامنة ═══════ */
+.sync-box{text-align:center; padding:30px 16px;}
+.sync-box h2{font-size:1.15rem; margin-bottom:16px; color:var(--green-dark);}
+.sync-code-display{font-size:2rem; font-weight:900; letter-spacing:6px; color:var(--green);
+  background:var(--green-light); border:2px dashed var(--green); border-radius:12px;
+  padding:16px 24px; margin:14px auto; display:inline-block; direction:ltr; user-select:all;}
+.sync-status{display:flex; align-items:center; justify-content:center; gap:8px;
+  margin:12px 0; font-size:.9rem;}
+.sync-dot{width:10px; height:10px; border-radius:50%; display:inline-block;}
+.sync-dot.on{background:#2ecc71; animation:pulse 1.5s infinite;}
+.sync-dot.off{background:#e74c3c;}
+.sync-dot.waiting{background:#f39c12; animation:pulse 1s infinite;}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.sync-input{font-size:1.4rem; text-align:center; letter-spacing:4px; direction:ltr;
+  max-width:260px; margin:0 auto;}
+.sync-divider{color:var(--muted); font-size:.85rem; margin:14px 0;}
+
+/* ═══════ الجولة التعريفية ═══════ */
+#tourOverlay{position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:1000; display:none;}
+#tourOverlay.show{display:block;}
+.tour-highlight{position:relative !important; z-index:1002 !important;
+  box-shadow:0 0 0 4px #fff, 0 0 0 8px var(--green) !important; border-radius:10px;}
+.tour-box{position:fixed; z-index:1003; background:#fff; border-radius:14px; padding:18px;
+  width:min(340px, 92vw); box-shadow:0 8px 30px rgba(0,0,0,.35);}
+.tour-box h3{color:var(--green-dark); margin-bottom:8px; font-size:1.05rem;}
+.tour-box p{font-size:.92rem; line-height:1.8; color:var(--txt);}
+.tour-dots{display:flex; gap:6px; justify-content:center; margin:12px 0;}
+.tour-dot{width:8px; height:8px; border-radius:50%; background:#d5ded9;}
+.tour-dot.on{background:var(--green);}
+.tour-actions{display:flex; justify-content:space-between; align-items:center; gap:8px;}
+.tour-skip{background:none; border:none; color:var(--muted); cursor:pointer;
+  font-size:.85rem; text-decoration:underline;}
+.tour-skip:hover{color:var(--red);}
+#navHelp{background:rgba(255,255,255,.18); border:none; color:#fff;
+  padding:8px 14px; border-radius:8px; cursor:pointer; font-size:.95rem;}
+#navHelp:hover{background:rgba(255,255,255,.32);}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>📖 متابعة التسميع <span id="hdrCode" class="hdr-code" onclick="go('sync')" title="كود بياناتك — اضغط للتفاصيل">…</span></h1>
+  <nav>
+    <button id="navBoard" class="active" onclick="go('board')">اللوحة</button>
+    <button id="navPeople" onclick="go('people')">الأشخاص</button>
+    <button id="navSync" onclick="go('sync')">المزامنة</button>
+    <button id="navHelp" title="شرح التطبيق" onclick="startTour()">❓ شرح</button>
+  </nav>
+</header>
+
+<main><div id="view"></div></main>
+
+<dialog id="assignDialog">
+  <h3 id="dlgTitle">إضافة مطلوب حفظ</h3>
+  <div class="field"><label>الشخص</label><select id="aPerson"></select></div>
+  <div class="field"><label>اليوم</label><select id="aDay"></select></div>
+  <div class="field">
+    <label>النوع</label>
+    <div class="type-toggle" id="aTypeToggle">
+      <label id="aTypeLblNew" class="sel-new" onclick="setAssignType('new')">
+        <input type="radio" name="aType" value="new" checked>
+        <span>🆕 جديد</span>
+      </label>
+      <label id="aTypeLblReview" onclick="setAssignType('review')">
+        <input type="radio" name="aType" value="review">
+        <span>🔁 مراجعة</span>
+      </label>
+    </div>
+  </div>
+  <div class="field">
+    <label>من سورة</label>
+    <select id="aSurahFrom" onchange="surahFromChanged()"></select>
+    <div class="hint" id="aHintFrom"></div>
+  </div>
+  <div class="field">
+    <label>من آية</label>
+    <input type="number" id="aFrom" min="1" value="1">
+  </div>
+  <div class="field">
+    <label>إلى سورة</label>
+    <select id="aSurahTo" onchange="surahToChanged()"></select>
+    <div class="hint" id="aHintTo"></div>
+  </div>
+  <div class="field">
+    <label>إلى آية</label>
+    <input type="number" id="aTo" min="1" value="1">
+  </div>
+
+  <div class="repeat-box">
+    <div class="box-title">🔁 التكرار</div>
+    <div class="field">
+      <label id="aRepeatLbl">تظهر كمراجعة بعد كام يوم؟</label>
+      <input type="number" id="aRepeat" min="0" max="365" value="0">
+      <div class="repeat-presets">
+        <button type="button" onclick="setRepeat(0)">بدون</button>
+        <button type="button" onclick="setRepeat(1)">يوم</button>
+        <button type="button" onclick="setRepeat(2)">يومين</button>
+        <button type="button" onclick="setRepeat(3)">٣ أيام</button>
+        <button type="button" onclick="setRepeat(7)">أسبوع</button>
+        <button type="button" onclick="setRepeat(14)">أسبوعين</button>
+        <button type="button" onclick="setRepeat(30)">شهر</button>
+      </div>
+      <div class="hint">٠ = من غير تكرار خالص</div>
+    </div>
+    <div class="field" id="aNextWrap">
+      <label>وبعد كده تتكرر كل كام يوم؟</label>
+      <input type="number" id="aNextRepeat" min="0" max="365" value="0">
+      <div class="hint">سيبها ٠ يعني تستخدم نفس المدة اللي فوق</div>
+    </div>
+  </div>
+
+  <div class="row" style="justify-content:flex-end; margin-top:8px">
+    <button class="ghost" onclick="closeDialog()">إلغاء</button>
+    <button class="primary" id="dlgSaveBtn" onclick="saveAssignment()">حفظ</button>
+  </div>
+</dialog>
+
+<!-- الجولة التعريفية -->
+<div id="tourOverlay">
+  <div class="tour-box" id="tourBox">
+    <h3 id="tourTitle"></h3>
+    <p id="tourText"></p>
+    <div class="tour-dots" id="tourDots"></div>
+    <div class="tour-actions">
+      <button class="tour-skip" onclick="endTour()">تخطي ✕</button>
+      <span class="row" style="gap:6px">
+        <button class="ghost" id="tourPrev" onclick="tourStep(-1)">السابق</button>
+        <button class="primary" id="tourNext" onclick="tourStep(1)">التالي</button>
+      </span>
+    </div>
+  </div>
+</div>
+
+<!-- Firebase -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+
+<script>
+/* ═══════════ السور ═══════════ */
+const SURAHS=[["الفاتحة",7],["البقرة",286],["آل عمران",200],["النساء",176],["المائدة",120],["الأنعام",165],["الأعراف",206],["الأنفال",75],["التوبة",129],["يونس",109],["هود",123],["يوسف",111],["الرعد",43],["إبراهيم",52],["الحجر",99],["النحل",128],["الإسراء",111],["الكهف",110],["مريم",98],["طه",135],["الأنبياء",112],["الحج",78],["المؤمنون",118],["النور",64],["الفرقان",77],["الشعراء",227],["النمل",93],["القصص",88],["العنكبوت",69],["الروم",60],["لقمان",34],["السجدة",30],["الأحزاب",73],["سبأ",54],["فاطر",45],["يس",83],["الصافات",182],["ص",88],["الزمر",75],["غافر",85],["فصلت",54],["الشورى",53],["الزخرف",89],["الدخان",59],["الجاثية",37],["الأحقاف",35],["محمد",38],["الفتح",29],["الحجرات",18],["ق",45],["الذاريات",60],["الطور",49],["النجم",62],["القمر",55],["الرحمن",78],["الواقعة",96],["الحديد",29],["المجادلة",22],["الحشر",24],["الممتحنة",13],["الصف",14],["الجمعة",11],["المنافقون",11],["التغابن",18],["الطلاق",12],["التحريم",12],["الملك",30],["القلم",52],["الحاقة",52],["المعارج",44],["نوح",28],["الجن",28],["المزمل",20],["المدثر",56],["القيامة",40],["الإنسان",31],["المرسلات",50],["النبأ",40],["النازعات",46],["عبس",42],["التكوير",29],["الانفطار",19],["المطففين",36],["الانشقاق",25],["البروج",22],["الطارق",17],["الأعلى",19],["الغاشية",26],["الفجر",30],["البلد",20],["الشمس",15],["الليل",21],["الضحى",11],["الشرح",8],["التين",8],["العلق",19],["القدر",5],["البينة",8],["الزلزلة",8],["العاديات",11],["القارعة",11],["التكاثر",8],["العصر",3],["الهمزة",9],["الفيل",5],["قريش",4],["الماعون",7],["الكوثر",3],["الكافرون",6],["النصر",3],["المسد",5],["الإخلاص",4],["الفلق",5],["الناس",6]];
+
+/* ═══════════ حالة التطبيق ═══════════ */
+let state = {people:[], assignments:[]};
+let view = "board";
+let selectedWeek = weekStartStr(new Date());
+let currentAssignType = "new";
+
+/* ═══════════ أدوات الأسابيع (يبدأ السبت) ═══════════ */
+function weekStartOf(d){ const x=new Date(d); x.setDate(x.getDate()-(x.getDay()+1)%7); x.setHours(0,0,0,0); return x; }
+function toStr(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+function weekStartStr(d){ return toStr(weekStartOf(d)); }
+function weekLabel(ws){ const a=new Date(ws+"T00:00:00"),b=new Date(a);b.setDate(b.getDate()+6); const f=new Intl.DateTimeFormat("ar-EG",{day:"numeric",month:"long"}); return f.format(a)+" – "+f.format(b); }
+function shiftWeek(n){ const d=new Date(selectedWeek+"T00:00:00"); d.setDate(d.getDate()+n*7); selectedWeek=toStr(d); render(); }
+const DAYS=["السبت","الأحد","الاثنين","الثلاثاء","الأربعاء","الخميس","الجمعة"];
+function weekDates(ws){ const a=new Date(ws+"T00:00:00"); return Array.from({length:7},(_,i)=>{const d=new Date(a);d.setDate(d.getDate()+i);return toStr(d);}); }
+function aDate(a){ return a.date||a.weekStart; }
+function dayLabel(ds){ const d=new Date(ds+"T00:00:00"); return DAYS[(d.getDay()+1)%7]+" "+new Intl.DateTimeFormat("ar-EG",{day:"numeric",month:"long"}).format(d); }
+
+/* ══════════════════════════════════════════
+   نظام المزامنة بالكود — Firestore polling
+   ══════════════════════════════════════════ */
+let db = null;
+let syncCode = null;
+let syncInterval = null;
+let syncToken = 0;
+let lastPushToken = 0;
+let syncStatus = "off";
+
+try {
+  firebase.initializeApp({
+    apiKey: "AIzaSyD8jxpVrvicStETloL8tk5s865dmNatIqE",
+    authDomain: "mazen-productivity-bab1c.firebaseapp.com",
+    projectId: "mazen-productivity-bab1c",
+    storageBucket: "mazen-productivity-bab1c.firebasestorage.app",
+    messagingSenderId: "388570583199",
+    appId: "1:388570583199:web:ecb4c426b95c5f292252aa"
+  });
+  db = firebase.firestore();
+} catch(e){ console.error("Firebase init failed:", e); }
+
+function docRef(){ return db.collection("tasmee_sync").doc(syncCode); }
+function genCode(){ const c="ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; let s=""; for(let i=0;i<6;i++) s+=c[Math.floor(Math.random()*c.length)]; return s; }
+
+async function startSyncWithCode(code){
+  code = code.toUpperCase().trim();
+  if(code.length < 4){ alert("الكود لازم يكون 4 حروف على الأقل"); return; }
+  if(!db){ alert("Firebase مش شغال — تأكد من الإنترنت"); return; }
+  syncCode = code;
+  localStorage.setItem("tasmee-sync-code", code);
+  syncStatus = "waiting"; render();
+  try {
+    const snap = await docRef().get();
+    if(snap.exists){
+      const d = snap.data();
+      state.people = d.people || []; state.assignments = d.assignments || [];
+      syncToken = d.syncToken || 0; lastPushToken = syncToken;
+    } else {
+      state = {people:[], assignments:[]};
+      syncToken = 1; lastPushToken = 1;
+      await docRef().set({people:[], assignments:[], syncToken:1, updatedAt:Date.now()});
+    }
+    saveLocal(); syncStatus = "on"; render(); beginPolling();
+  } catch(e){
+    console.error("Sync error:", e);
+    syncStatus = "error"; render();
+    alert("فشل الاتصال: " + (e.code||e.message));
+  }
+}
+
+/* ══ الكود ما بيتشالش أبداً — بيتبدل بكود تاني بس ══ */
+async function autoCreateCode(keepData){
+  if(!db){ syncStatus = "error"; render(); return; }
+  syncStatus = "waiting"; render();
+  try {
+    let code = null;
+    for(let i=0; i<6; i++){
+      const c = genCode();
+      const snap = await db.collection("tasmee_sync").doc(c).get();
+      if(!snap.exists){ code = c; break; }
+    }
+    if(!code) code = genCode();
+    if(!keepData) state = {people:[], assignments:[]};
+    syncCode = code;
+    localStorage.setItem("tasmee-sync-code", code);
+    syncToken = 1; lastPushToken = 1;
+    await docRef().set({people:state.people, assignments:state.assignments, syncToken:1, updatedAt:Date.now()});
+    saveLocal(); syncStatus = "on"; render(); beginPolling();
+  } catch(e){
+    console.error("Auto code failed:", e);
+    syncStatus = "error"; render();
+  }
+}
+
+async function bootSync(){
+  if(!db){ syncStatus = "error"; render(); return; }
+  const saved = localStorage.getItem("tasmee-sync-code");
+  if(saved){
+    syncCode = saved; syncStatus = "waiting"; render();
+    try {
+      const snap = await docRef().get();
+      if(snap.exists){
+        const d = snap.data();
+        state.people = d.people || []; state.assignments = d.assignments || [];
+        syncToken = d.syncToken || 0; lastPushToken = syncToken;
+        saveLocal();
+      } else {
+        syncToken = 1; lastPushToken = 1;
+        await docRef().set({people:state.people, assignments:state.assignments, syncToken:1, updatedAt:Date.now()});
+      }
+      syncStatus = "on"; render(); beginPolling();
+    } catch(e){
+      console.error("Restore sync failed:", e);
+      syncStatus = "error"; render();
+    }
+    return;
+  }
+  /* أول فتح للتطبيق: كود بيتولّد تلقائياً ومعاه أي بيانات محلية موجودة */
+  await autoCreateCode(true);
+}
+
+function beginPolling(){
+  if(syncInterval) clearInterval(syncInterval);
+  syncInterval = setInterval(syncTick, 2000);
+}
+
+async function syncTick(){
+  if(!syncCode || !db) return;
+  try {
+    const snap = await docRef().get();
+    if(!snap.exists) return;
+    const remote = snap.data();
+    const rt = remote.syncToken || 0;
+    if(rt > syncToken){
+      state.people = remote.people || []; state.assignments = remote.assignments || [];
+      syncToken = rt; lastPushToken = rt; saveLocal(); render();
+    } else if(syncToken > lastPushToken){
+      await pushToFirebase();
+    }
+    if(syncStatus !== "on"){ syncStatus = "on"; render(); }
+  } catch(e){
+    console.error("Sync tick error:", e);
+    if(syncStatus !== "error"){ syncStatus = "error"; render(); }
+  }
+}
+
+async function pushToFirebase(){
+  if(!syncCode || !db) return;
+  try {
+    await docRef().set({people:state.people, assignments:state.assignments, syncToken:syncToken, updatedAt:Date.now()});
+    lastPushToken = syncToken; syncStatus = "on";
+  } catch(e){ console.error("Push failed:", e); syncStatus = "error"; }
+}
+
+function localChange(){
+  syncToken++; saveLocal(); render();
+  if(syncCode && db) pushToFirebase();
+}
+
+/* ═══════════ طبقة البيانات ═══════════ */
+function loadLocal(){
+  try{ state = JSON.parse(localStorage.getItem("tasmee-data"))||{people:[],assignments:[]}; }
+  catch(e){ state={people:[],assignments:[]}; }
+  if(!state.people) state.people=[];
+  if(!state.assignments) state.assignments=[];
+}
+function saveLocal(){ localStorage.setItem("tasmee-data", JSON.stringify(state)); }
+function uid(){ return crypto.randomUUID ? crypto.randomUUID() : Date.now()+"-"+Math.random(); }
+
+/* ═══════════ عمليات البيانات ═══════════ */
+function opAddPerson(name){ state.people.push({id:uid(), name, createdAt:Date.now()}); localChange(); }
+function opDeletePerson(id){ state.people=state.people.filter(p=>p.id!==id); state.assignments=state.assignments.filter(a=>a.personId!==id); localChange(); }
+function opAddAssignment(a){ a.id=uid(); state.assignments.push(a); localChange(); }
+function getStatus(a){ return a.status||(a.done?"done":"pending"); }
+function opCycleStatus(id){
+  const a=state.assignments.find(x=>x.id===id); if(!a) return;
+  const cur=getStatus(a);
+  const next = cur==="pending"?"done":cur==="done"?"absent":"pending";
+  a.status=next; a.done=(next==="done"); a.updatedAt=Date.now();
+  if(next==="done") spawnRepeat(a); else removeSpawn(a);
+  localChange();
+}
+function opDeleteAssignment(id){ state.assignments=state.assignments.filter(x=>x.id!==id); localChange(); }
+function opUpdateAssignment(id, patch){
+  const a=state.assignments.find(x=>x.id===id); if(!a) return;
+  Object.assign(a, patch); a.updatedAt=Date.now(); localChange();
+}
+
+/* ═══════════ التكرار التلقائي ═══════════ */
+function addDaysStr(ds, n){ const d=new Date(ds+"T00:00:00"); d.setDate(d.getDate()+n); return toStr(d); }
+
+/* أول ما يتعلّم ✅ → بتتولّد نسخة «مراجعة» بعد عدد الأيام المحدد */
+function spawnRepeat(a){
+  const r = +a.repeatDays || 0;
+  if(r <= 0) return;
+  if(a.spawnedId && state.assignments.some(x=>x.id===a.spawnedId)) return; // اتولّدت قبل كده
+  const nextInt = (+a.nextRepeat || 0) > 0 ? +a.nextRepeat : r;
+  const d = addDaysStr(aDate(a), r);
+  const child = {
+    id: uid(),
+    personId: a.personId,
+    surahFrom: a.surahFrom, surahTo: a.surahTo, surah: a.surah,
+    fromAyah: a.fromAyah, toAyah: a.toAyah,
+    assignType: "review",              // دايماً بترجع مراجعة مش حفظ جديد
+    repeatDays: nextInt, nextRepeat: nextInt,
+    date: d,
+    weekStart: weekStartStr(new Date(d+"T00:00:00")),
+    status: "pending", done: false,
+    parentId: a.id, rootId: a.rootId || a.id,
+    autoGen: true, createdAt: Date.now()
+  };
+  state.assignments.push(child);
+  a.spawnedId = child.id;
+}
+
+/* لو شال علامة ✅ → المراجعة اللي اتولّدت بتتشال (طالما لسه ما اتسمّعتش) */
+function removeSpawn(a){
+  if(!a.spawnedId) return;
+  const c = state.assignments.find(x=>x.id===a.spawnedId);
+  if(!c){ a.spawnedId = null; return; }
+  if(getStatus(c)==="pending" && !c.spawnedId){
+    state.assignments = state.assignments.filter(x=>x.id!==c.id);
+    a.spawnedId = null;
+  }
+}
+
+/* سلسلة المراجعات المتولّدة من مطلوب معيّن */
+function chainChildren(id){
+  const out=[]; let cur=state.assignments.find(x=>x.id===id); let guard=0;
+  while(cur && cur.spawnedId && guard++ < 300){
+    const c = state.assignments.find(x=>x.id===cur.spawnedId);
+    if(!c) break;
+    out.push(c); cur=c;
+  }
+  return out;
+}
+
+/* ═══════════ العرض ═══════════ */
+function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function personById(id){ return state.people.find(p=>p.id===id); }
+
+function assignLabel(a){
+  const fromSurah = SURAHS[a.surah || a.surahFrom || 0][0];
+  const toSurahIdx = a.surahTo !== undefined ? a.surahTo : (a.surah !== undefined ? a.surah : 0);
+  const toSurah = SURAHS[toSurahIdx][0];
+  const from = a.fromAyah || 1;
+  const to = a.toAyah || 1;
+  if((a.surah !== undefined && a.surahTo === undefined) || (a.surahFrom === toSurahIdx)){
+    return fromSurah+" "+from+"–"+to;
+  }
+  return fromSurah+" "+from+" → "+toSurah+" "+to;
+}
+
+function assignTypeLabel(a){
+  const t = a.assignType || "new";
+  if(t === "review") return '<span class="type-badge review-badge">مراجعة</span>';
+  return '<span class="type-badge new-badge">جديد</span>';
+}
+
+function assignTypeClass(a){
+  return (a.assignType || "new") === "review" ? "type-review" : "type-new";
+}
+
+function repeatBadge(a){
+  const r = +a.repeatDays || 0;
+  if(r <= 0) return "";
+  const txt = r===1?"يوم" : r===2?"يومين" : r===7?"أسبوع" : r===14?"أسبوعين" : r===30?"شهر" : r+"ي";
+  return `<span class="rep-badge" title="هيتكرر كمراجعة بعد ${r} يوم">🔁${txt}</span>`;
+}
+
+function repeatText(a){
+  const r = +a.repeatDays || 0;
+  if(r <= 0) return "";
+  const nx = (+a.nextRepeat || 0) > 0 ? +a.nextRepeat : r;
+  return nx !== r ? ` · 🔁 بعد ${r} يوم ثم كل ${nx} يوم` : ` · 🔁 كل ${r} يوم`;
+}
+
+function sortedPeople(){ return [...state.people].sort((a,b)=>(a.createdAt||0)-(b.createdAt||0)); }
+
+function go(v){
+  view = v;
+  document.getElementById("navBoard").className  = v==="board" ? "active" : "";
+  document.getElementById("navPeople").className = (v==="people"||v.startsWith("person:")) ? "active" : "";
+  document.getElementById("navSync").className   = v==="sync" ? "active" : "";
+  render();
+}
+
+function render(){
+  renderHeaderCode();
+  const el = document.getElementById("view");
+  if(view==="board") el.innerHTML = renderBoard();
+  else if(view==="people") el.innerHTML = renderPeople();
+  else if(view==="sync") el.innerHTML = renderSync();
+  else if(view.startsWith("person:")) el.innerHTML = renderPerson(view.slice(7));
+}
+
+/* ═══════════ شاشة المزامنة ═══════════ */
+function renderSync(){
+  let h = `<div class="card sync-box">`;
+  if(syncCode){
+    const dot = syncStatus==="on"?"on":syncStatus==="waiting"?"waiting":"off";
+    const txt = syncStatus==="on"?"متزامن ☁️":syncStatus==="waiting"?"جاري الاتصال...":"خطأ في الاتصال ❌";
+    h += `<h2>🔗 كود بياناتك</h2>
+      <p style="color:var(--muted);margin-bottom:12px;">ده كودك الدائم — احفظه. أي جهاز تاني يدخل بيه هيشوف نفس البيانات ويتزامن تلقائياً</p>
+      <div class="sync-code-display">${esc(syncCode)}</div>
+      <div class="sync-status"><span class="sync-dot ${dot}"></span><span>${txt}</span></div>
+      <p style="font-size:.82rem;color:var(--muted);margin:8px 0;">👥 ${state.people.length} شخص · 📋 ${state.assignments.length} تسميع</p>
+      <div style="display:flex;flex-direction:column;gap:10px;align-items:center;margin-top:16px;">
+        <button class="primary" onclick="copySyncCode(this)" style="min-width:180px;">📋 نسخ الكود</button>
+      </div>
+      <div class="sync-divider">── تحب تتحول لكود تاني؟ ──</div>
+      <div style="max-width:300px;margin:10px auto;">
+        <input type="text" id="switchCodeInput" class="sync-input" placeholder="مثلاً: ABC123" maxlength="8" onkeydown="if(event.key==='Enter')switchCode()">
+        <button class="primary" onclick="switchCode()" style="margin-top:10px;min-width:180px;">🔗 اتصل بالكود ده</button>
+        <p class="hint" style="margin-top:6px;">بياناتك الحالية هتفضل محفوظة على كودها القديم</p>
+      </div>
+      <div class="sync-divider">── أو ──</div>
+      <button class="ghost" onclick="newEmptyCode()">✨ كود جديد فاضي (بداية من الصفر)</button>`;
+  } else if(!db){
+    h += `<h2>⚠️ مفيش اتصال بالنت</h2>
+      <p style="color:var(--muted);margin:12px 0;">التطبيق شغال محلياً على الجهاز ده بس دلوقتي. أول ما النت يرجع افتح التطبيق تاني وهيتعملك كود تلقائي إن شاء الله.</p>`;
+  } else {
+    h += `<h2>⏳ بنجهّز كودك...</h2>
+      <div class="sync-status"><span class="sync-dot waiting"></span><span>جاري إنشاء كود لبياناتك</span></div>
+      <button class="ghost" onclick="autoCreateCode(true)" style="margin-top:14px;">🔄 حاول تاني</button>`;
+  }
+  h += `</div>`;
+  return h;
+}
+
+function renderHeaderCode(){
+  const el = document.getElementById("hdrCode");
+  if(!el) return;
+  el.textContent = syncCode ? syncCode : (db ? "…" : "محلي");
+}
+
+function switchCode(){
+  const inp = document.getElementById("switchCodeInput");
+  if(!inp) return;
+  const code = inp.value.trim().toUpperCase();
+  if(!code){ alert("اكتب الكود الأول"); return; }
+  if(code === syncCode){ alert("ده نفس الكود الحالي 🙂"); return; }
+  if(!confirm("هتتحوّل للكود «" + code + "»\nالشاشة هتعرض بيانات الكود ده.\nبياناتك الحالية مش هتضيع — هتفضل متسجلة على الكود «" + syncCode + "».\nتمام؟")) return;
+  startSyncWithCode(code);
+}
+
+function newEmptyCode(){
+  if(!confirm("هيتعملك كود جديد ببيانات فاضية تماماً.\nالبيانات الحالية هتفضل محفوظة على الكود «" + syncCode + "» — اكتبه عندك الأول.\nمتأكد؟")) return;
+  autoCreateCode(false);
+}
+function copySyncCode(btn){
+  if(!syncCode) return;
+  navigator.clipboard.writeText(syncCode).then(()=>{
+    btn.textContent="✅ تم النسخ!";
+    setTimeout(()=>btn.textContent="📋 نسخ الكود",1500);
+  }).catch(()=>prompt("انسخ الكود:",syncCode));
+}
+
+/* ═══════════ اللوحة ═══════════ */
+function renderBoard(){
+  const wa = state.assignments.filter(a=>a.weekStart===selectedWeek);
+  const done = wa.filter(a=>getStatus(a)==="done").length;
+  const isCur = selectedWeek===weekStartStr(new Date());
+  let h=`<div class="week-nav"><button onclick="shiftWeek(1)">‹ التالي</button>
+    <span class="label">أسبوع ${weekLabel(selectedWeek)}${isCur?" (الحالي)":""}</span>
+    <button onclick="shiftWeek(-1)">السابق ›</button></div>`;
+  if(!isCur) h+=`<div style="text-align:center;margin-bottom:10px"><button class="ghost" onclick="selectedWeek=weekStartStr(new Date());render()">↩ رجوع للأسبوع الحالي</button></div>`;
+  const absent=wa.filter(a=>getStatus(a)==="absent").length;
+  const newCount=wa.filter(a=>(a.assignType||"new")==="new").length;
+  const reviewCount=wa.filter(a=>a.assignType==="review").length;
+  if(wa.length) h+=`<div class="stats">✅ سمّع ${done} · ❌ تخلف ${absent} · من ${wa.length} مطلوب (🆕 ${newCount} جديد · 🔁 ${reviewCount} مراجعة)</div>`;
+  if(!state.people.length) return h+`<div class="card"><div class="empty">لسه مفيش أشخاص — روح لتبويب «الأشخاص» وضيف أصحابك 👋</div></div>`;
+  const dates=weekDates(selectedWeek), todayStr=toStr(new Date());
+  h+=`<div class="card board-wrap"><table class="board"><tr><th>الاسم</th>`;
+  dates.forEach((d,i)=>{
+    const num=new Intl.DateTimeFormat("ar-EG",{day:"numeric"}).format(new Date(d+"T00:00:00"));
+    h+=`<th class="${d===todayStr?"today":""}">${DAYS[i]}<br>${num}</th>`;
+  });
+  h+=`</tr>`;
+  for(const p of sortedPeople()){
+    h+=`<tr><td class="pname" onclick="go('person:${p.id}')">${esc(p.name)}</td>`;
+    for(const d of dates){
+      const cell=wa.filter(a=>a.personId===p.id&&aDate(a)===d);
+      h+=`<td><div class="cellchips">`;
+      for(const a of cell){
+        const st=getStatus(a), icon=st==="done"?"✅":st==="absent"?"❌":"⬜";
+        const tc=assignTypeClass(a);
+        h+=`<span class="chip small ${st==="done"?"done":st==="absent"?"absent":""} ${tc}" onclick="opCycleStatus('${a.id}')" title="اضغط لتغيير الحالة">${assignTypeLabel(a)} ${icon} ${esc(assignLabel(a))} ${repeatBadge(a)}<span class="ed" title="تعديل" onclick="event.stopPropagation();openDialog(null,null,'${a.id}')">✎</span><span class="x" onclick="event.stopPropagation();delAssign('${a.id}')">×</span></span>`;
+      }
+      h+=`<button class="addday" onclick="openDialog('${p.id}','${d}')">＋</button></div></td>`;
+    }
+    h+=`</tr>`;
+  }
+  h+=`</table></div>`;
+  return h;
+}
+
+/* ═══════════ الأشخاص ═══════════ */
+function renderPeople(){
+  let h=`<div class="card"><div class="row">
+    <input type="text" id="newName" placeholder="اسم الشخص الجديد" style="flex:1" onkeydown="if(event.key==='Enter')addPerson()">
+    <button class="primary" onclick="addPerson()">إضافة</button>
+  </div></div><div class="card"><ul class="people">`;
+  const ps=sortedPeople();
+  if(!ps.length) h+=`<div class="empty">مفيش أشخاص لسه</div>`;
+  for(const p of ps){
+    const pa=state.assignments.filter(a=>a.personId===p.id);
+    h+=`<li><span class="person-name" onclick="go('person:${p.id}')">${esc(p.name)} <span class="hint">(✅ ${pa.filter(a=>getStatus(a)==="done").length} · ❌ ${pa.filter(a=>getStatus(a)==="absent").length} · من ${pa.length})</span></span>
+      <button class="danger" onclick="delPerson('${p.id}')">حذف</button></li>`;
+  }
+  h+=`</ul></div>`; return h;
+}
+
+/* ═══════════ ملف شخص ═══════════ */
+function renderPerson(id){
+  const p=personById(id);
+  if(!p) return `<div class="card empty">الشخص ده اتحذف</div>`;
+  const list=state.assignments.filter(a=>a.personId===id).sort((a,b)=>b.weekStart.localeCompare(a.weekStart)||aDate(a).localeCompare(aDate(b)));
+  let h=`<span class="back" onclick="go('people')">→ رجوع للأشخاص</span>
+  <div class="card"><div class="person-head" style="margin-bottom:6px"><h2 style="font-size:1.15rem">${esc(p.name)}</h2>
+    <div class="row"><button class="primary" onclick="openDialog('${id}')">＋ إضافة مطلوب</button>
+    <button class="danger" onclick="delPerson('${id}')">حذف الشخص</button></div></div>`;
+  if(!list.length) h+=`<div class="empty">لسه مفيش أي مطلوب مسجّل</div>`;
+  let lastW=null;
+  for(const a of list){
+    if(a.weekStart!==lastW){ lastW=a.weekStart; h+=`<div class="week-title">أسبوع ${weekLabel(a.weekStart)}</div>`; }
+    const st=getStatus(a);
+    const tc=assignTypeClass(a);
+    h+=`<div class="assign-item ${tc}"><span>${assignTypeLabel(a)} ${esc(assignLabel(a))}
+        <span class="hint">— ${dayLabel(aDate(a))}${repeatText(a)}${a.autoGen?" · مُرحّلة تلقائياً":""}</span></span>
+      <span class="row"><button class="status-btn ${st}" onclick="opCycleStatus('${a.id}')">${st==="done"?"✅ سمّع":st==="absent"?"❌ تخلف":"⬜ لم يسمّع"}</button>
+      <button class="edit" onclick="openDialog(null,null,'${a.id}')">✎ تعديل</button>
+      <button class="danger" onclick="delAssign('${a.id}')">حذف</button></span></div>`;
+  }
+  h+=`</div>`; return h;
+}
+
+/* ═══════════ أفعال ═══════════ */
+function addPerson(){ const inp=document.getElementById("newName"),name=inp.value.trim(); if(!name)return; opAddPerson(name); inp.value=""; }
+function delPerson(id){ const p=personById(id); if(p&&confirm("متأكد تحذف «"+p.name+"» وكل تسجيلاته؟")){ if(view==="person:"+id)view="people"; opDeletePerson(id); } }
+function delAssign(id){
+  const a=state.assignments.find(x=>x.id===id); if(!a) return;
+  const kids = chainChildren(id);
+  if(kids.length){
+    if(!confirm("«"+assignLabel(a)+"» ليها "+kids.length+" مراجعة متولّدة منها.\nموافق تتحذف هي وكل المراجعات دي؟")) return;
+    const ids = new Set([id, ...kids.map(k=>k.id)]);
+    state.assignments = state.assignments.filter(x=>!ids.has(x.id));
+    state.assignments.forEach(x=>{ if(ids.has(x.spawnedId)) x.spawnedId=null; });
+    localChange();
+    return;
+  }
+  if(confirm("حذف «"+assignLabel(a)+"»؟")){
+    state.assignments.forEach(x=>{ if(x.spawnedId===id) x.spawnedId=null; });
+    opDeleteAssignment(id);
+  }
+}
+
+/* ═══════════ نوع التسميع (جديد/مراجعة) ═══════════ */
+function setAssignType(t){
+  currentAssignType = t;
+  const lblNew = document.getElementById("aTypeLblNew");
+  const lblReview = document.getElementById("aTypeLblReview");
+  if(t === "new"){
+    lblNew.className = "sel-new";
+    lblReview.className = "";
+  } else {
+    lblNew.className = "";
+    lblReview.className = "sel-review";
+  }
+  const lbl = document.getElementById("aRepeatLbl");
+  const wrap = document.getElementById("aNextWrap");
+  if(lbl) lbl.textContent = (t === "new") ? "تظهر كمراجعة بعد كام يوم؟" : "تتكرر كل كام يوم؟";
+  if(wrap) wrap.style.display = (t === "new") ? "" : "none";
+}
+
+function setRepeat(n){
+  const el = document.getElementById("aRepeat");
+  if(el) el.value = n;
+}
+
+/* ═══════════ نافذة المطلوب ═══════════ */
+const dlg=document.getElementById("assignDialog");
+
+function populateSurahSelect(selId){
+  const ss=document.getElementById(selId);
+  if(!ss.options.length){
+    ss.innerHTML=SURAHS.map((s,i)=>`<option value="${i}">${i+1}. ${s[0]}</option>`).join("");
+  }
+}
+
+let editingId = null;
+
+function openDialog(pid, date, editId){
+  editingId = editId || null;
+  const a = editingId ? state.assignments.find(x=>x.id===editingId) : null;
+  if(editingId && !a){ alert("المطلوب ده مش موجود"); editingId=null; return; }
+  if(!a && !state.people.length){ alert("ضيف شخص الأول من تبويب «الأشخاص» 👋"); return; }
+
+  document.getElementById("dlgTitle").textContent = a ? "✎ تعديل المطلوب" : "إضافة مطلوب حفظ";
+  document.getElementById("dlgSaveBtn").textContent = a ? "حفظ التعديل" : "حفظ";
+
+  const targetPid = a ? a.personId : pid;
+  document.getElementById("aPerson").innerHTML = sortedPeople().map(p=>`<option value="${p.id}" ${p.id===targetPid?"selected":""}>${esc(p.name)}</option>`).join("");
+
+  const wk = a ? (a.weekStart || weekStartStr(new Date(aDate(a)+"T00:00:00"))) : selectedWeek;
+  const dates = weekDates(wk);
+  const today = toStr(new Date());
+  const def = a ? aDate(a) : (date || (dates.includes(today) ? today : dates[0]));
+  document.getElementById("aDay").innerHTML = dates.map(d=>`<option value="${d}" ${d===def?"selected":""}>${dayLabel(d)}</option>`).join("");
+
+  populateSurahSelect("aSurahFrom");
+  populateSurahSelect("aSurahTo");
+
+  if(a){
+    const sf = (a.surahFrom !== undefined) ? a.surahFrom : (a.surah || 0);
+    const stt = (a.surahTo !== undefined) ? a.surahTo : sf;
+    document.getElementById("aSurahFrom").value = sf;
+    document.getElementById("aSurahTo").value = stt;
+    setAssignType(a.assignType === "review" ? "review" : "new");
+    surahFromChanged();
+    document.getElementById("aSurahTo").value = stt;
+    surahToChanged();
+    document.getElementById("aFrom").value = a.fromAyah || 1;
+    document.getElementById("aTo").value = a.toAyah || 1;
+    document.getElementById("aRepeat").value = +a.repeatDays || 0;
+    document.getElementById("aNextRepeat").value = +a.nextRepeat || 0;
+  } else {
+    setAssignType("new");
+    document.getElementById("aRepeat").value = 0;
+    document.getElementById("aNextRepeat").value = 0;
+    surahFromChanged();
+    surahToChanged();
+  }
+  dlg.showModal();
+}
+
+function surahFromChanged(){
+  const i=+document.getElementById("aSurahFrom").value, n=SURAHS[i][1];
+  document.getElementById("aHintFrom").textContent="عدد آياتها: "+n;
+  const f=document.getElementById("aFrom");
+  f.max=n; if(+f.value>n) f.value=1;
+
+  // Sync "to surah" to be >= "from surah" if needed
+  const toSel = document.getElementById("aSurahTo");
+  if(+toSel.value < i) { toSel.value = i; surahToChanged(); }
+}
+
+function surahToChanged(){
+  const i=+document.getElementById("aSurahTo").value, n=SURAHS[i][1];
+  document.getElementById("aHintTo").textContent="عدد آياتها: "+n;
+  const t=document.getElementById("aTo");
+  t.max=n; if(+t.value>n) t.value=n;
+}
+
+function closeDialog(){ editingId = null; dlg.close(); }
+
+function saveAssignment(){
+  const pid=document.getElementById("aPerson").value;
+  const surahFrom=+document.getElementById("aSurahFrom").value;
+  const surahTo=+document.getElementById("aSurahTo").value;
+  const nFrom=SURAHS[surahFrom][1];
+  const nTo=SURAHS[surahTo][1];
+
+  let from=Math.min(Math.max(1,+document.getElementById("aFrom").value||1),nFrom);
+  let to=Math.min(Math.max(1,+document.getElementById("aTo").value||nTo),nTo);
+
+  // Validation
+  if(surahFrom > surahTo){
+    alert("«من سورة» لازم تكون قبل «إلى سورة» في ترتيب المصحف");
+    return;
+  }
+  if(surahFrom === surahTo && from > to){
+    alert("«من آية» لازم تكون أصغر من «إلى آية» في نفس السورة");
+    return;
+  }
+  if(!pid){ alert("اختار الشخص الأول"); return; }
+
+  const rep = Math.max(0, Math.min(365, +document.getElementById("aRepeat").value || 0));
+  const nxtRaw = Math.max(0, Math.min(365, +document.getElementById("aNextRepeat").value || 0));
+  const nxt = (currentAssignType === "review") ? rep : nxtRaw;
+  const dateVal = document.getElementById("aDay").value;
+
+  const data = {
+    personId: pid,
+    surahFrom: surahFrom,
+    surahTo: surahTo,
+    surah: surahFrom, // backward compat
+    fromAyah: from,
+    toAyah: to,
+    assignType: currentAssignType,
+    repeatDays: rep,
+    nextRepeat: nxt,
+    date: dateVal,
+    weekStart: weekStartStr(new Date(dateVal+"T00:00:00"))
+  };
+
+  if(editingId){
+    const kids = chainChildren(editingId).filter(c=>getStatus(c)==="pending");
+    if(kids.length && confirm("في "+kids.length+" مراجعة لاحقة متولّدة من المطلوب ده.\nتحب أعدّل فيها المقدار ومدة التكرار كمان؟")){
+      const useInt = nxt > 0 ? nxt : rep;
+      kids.forEach(c=>{
+        c.surahFrom=surahFrom; c.surahTo=surahTo; c.surah=surahFrom;
+        c.fromAyah=from; c.toAyah=to;
+        c.repeatDays=useInt; c.nextRepeat=useInt;
+      });
+    }
+    opUpdateAssignment(editingId, data);
+  } else {
+    opAddAssignment(Object.assign({}, data, {done:false, status:"pending", createdAt:Date.now()}));
+  }
+  editingId = null;
+  dlg.close();
+}
+
+/* ═══════════ الجولة التعريفية ═══════════ */
+const TOUR_STEPS = [
+  { title:"أهلاً بيك في متابعة التسميع 👋",
+    text:"التطبيق ده بيساعدك تتابع حفظ ومراجعة القرآن لمجموعة أشخاص، أسبوع بأسبوع. تعالى ناخد جولة سريعة على أهم حاجات فيه — دقيقة واحدة بس!" },
+  { target:"#navPeople", title:"👥 الأشخاص",
+    text:"أول خطوة: ضيف الأشخاص اللي هتتابعهم من التبويب ده. ولو ضغطت على اسم أي شخص هيظهرلك سجله الكامل بكل المطاليب وحالاتها." },
+  { target:"#navBoard", title:"📋 اللوحة",
+    text:"دي الشاشة الرئيسية: جدول أسبوعي لكل شخص وكل يوم. اضغط ＋ في أي خلية عشان تضيف مطلوب حفظ (جديد 🆕 أو مراجعة 🔁)، واضغط على المطلوب نفسه عشان تغيّر حالته: ⬜ لم يسمّع ← ✅ سمّع ← ❌ تخلف." },
+  { title:"🔁 التكرار التلقائي",
+    text:"وأنت بتضيف مطلوب، حدّد «التكرار». لو حفظ جديد وحطيت ٢ يوم: أول ما تعلّم عليه ✅ هيظهر تاني بعد يومين لكن كـ«مراجعة» مش حفظ جديد. ولو مراجعة تكرارها أسبوع: كل ما تعلّم ✅ هتتولّد مراجعة جديدة بعد أسبوع — وهكذا من غير ما تشيل هم." },
+  { title:"✎ التعديل",
+    text:"أي مطلوب تقدر تعدّله: اضغط على علامة ✎ جنبه في اللوحة، أو زر «تعديل» من صفحة الشخص. تغيّر المقدار (السور والآيات) أو مدة التكرار أو اليوم أو النوع." },
+  { target:"#navSync", title:"☁️ كودك",
+    text:"التطبيق بيعملك كود تلقائي أول ما تفتحه، وبيفضل ظاهر جنب اسم التطبيق فوق. أي جهاز تاني يدخل بنفس الكود هيشوف نفس البيانات ويتزامن معاك. الكود ما بيتشالش — تقدر تبدّله بكود تاني بس." },
+  { target:"#navHelp", title:"❓ محتاج الشرح تاني؟",
+    text:"في أي وقت اضغط على زر «شرح» ده وهتظهرلك الجولة دي من الأول. يلا بينا نبدأ! 🚀" }
+];
+let tourIdx = 0;
+let tourActive = false;
+
+function startTour(){
+  tourIdx = 0; tourActive = true;
+  document.getElementById("tourOverlay").classList.add("show");
+  showTourStep();
+}
+
+function endTour(){
+  tourActive = false;
+  document.getElementById("tourOverlay").classList.remove("show");
+  document.querySelectorAll(".tour-highlight").forEach(e=>e.classList.remove("tour-highlight"));
+  localStorage.setItem("tasmee-intro-done","1");
+}
+
+function tourStep(n){
+  tourIdx += n;
+  if(tourIdx >= TOUR_STEPS.length){ endTour(); return; }
+  if(tourIdx < 0) tourIdx = 0;
+  showTourStep();
+}
+
+function showTourStep(){
+  const s = TOUR_STEPS[tourIdx];
+  document.querySelectorAll(".tour-highlight").forEach(e=>e.classList.remove("tour-highlight"));
+  const box = document.getElementById("tourBox");
+  document.getElementById("tourTitle").textContent = s.title;
+  document.getElementById("tourText").textContent = s.text;
+  document.getElementById("tourDots").innerHTML =
+    TOUR_STEPS.map((_,i)=>`<span class="tour-dot ${i===tourIdx?"on":""}"></span>`).join("");
+  document.getElementById("tourPrev").style.visibility = tourIdx===0 ? "hidden" : "visible";
+  document.getElementById("tourNext").textContent = tourIdx===TOUR_STEPS.length-1 ? "ابدأ 🚀" : "التالي";
+
+  const t = s.target ? document.querySelector(s.target) : null;
+  if(t){
+    t.classList.add("tour-highlight");
+    const r = t.getBoundingClientRect();
+    box.style.transform = "none";
+    box.style.top = Math.min(r.bottom + 14, window.innerHeight - box.offsetHeight - 12) + "px";
+    let left = r.left + r.width/2 - box.offsetWidth/2;
+    left = Math.max(8, Math.min(left, window.innerWidth - box.offsetWidth - 8));
+    box.style.left = left + "px";
+  } else {
+    box.style.top = "50%"; box.style.left = "50%";
+    box.style.transform = "translate(-50%,-50%)";
+  }
+}
+
+window.addEventListener("resize", ()=>{ if(tourActive) showTourStep(); });
+document.getElementById("tourOverlay").addEventListener("click", e=>{
+  if(e.target.id === "tourOverlay") endTour();
+});
+
+/* ═══════════ التشغيل ═══════════ */
+(function init(){
+  loadLocal();
+  render();
+  bootSync();
+  if(!localStorage.getItem("tasmee-intro-done")){
+    setTimeout(startTour, 400);
+  }
+})();
+</script>
+</body>
+</html>
