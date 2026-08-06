@@ -560,10 +560,38 @@ function go(v){
 function render(){
   renderHeaderCode();
   const el = document.getElementById("view");
+
+  // احفظ موضع التمرير (رأسي للصفحة + أفقي لجدول اللوحة لو موجود) قبل إعادة الرسم
+  const scrollY = window.scrollY;
+  const boardWrap = el.querySelector(".board-wrap");
+  const boardScrollX = boardWrap ? boardWrap.scrollLeft : 0;
+
+  // احفظ الفوكس الحالي لو المستخدم واقف على input (مثلاً بيكتب اسم شخص)
+  const activeEl = document.activeElement;
+  const activeId = (activeEl && el.contains(activeEl)) ? activeEl.id : null;
+  const activeSelStart = (activeId && "selectionStart" in activeEl) ? activeEl.selectionStart : null;
+  const activeSelEnd = (activeId && "selectionStart" in activeEl) ? activeEl.selectionEnd : null;
+
   if(view==="board") el.innerHTML = renderBoard();
   else if(view==="people") el.innerHTML = renderPeople();
   else if(view==="sync") el.innerHTML = renderSync();
   else if(view.startsWith("person:")) el.innerHTML = renderPerson(view.slice(7));
+
+  // رجّع موضع التمرير بعد إعادة الرسم
+  window.scrollTo(0, scrollY);
+  const newBoardWrap = el.querySelector(".board-wrap");
+  if(newBoardWrap) newBoardWrap.scrollLeft = boardScrollX;
+
+  // رجّع الفوكس ومكان المؤشر لو كان فيه input متفوكس
+  if(activeId){
+    const newActive = document.getElementById(activeId);
+    if(newActive){
+      newActive.focus();
+      if(activeSelStart !== null && "setSelectionRange" in newActive){
+        try{ newActive.setSelectionRange(activeSelStart, activeSelEnd); }catch(e){}
+      }
+    }
+  }
 }
 
 /* ═══════════ شاشة المزامنة ═══════════ */
