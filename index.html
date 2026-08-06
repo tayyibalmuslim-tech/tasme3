@@ -735,24 +735,45 @@ function renderPerson(id){
   h+=`</div>`; return h;
 }
 
+/* ═══════════ حفظ/استرجاع موضع التمرير حوالين أي عملية (خصوصاً اللي فيها confirm) ═══════════ */
+function withScrollPreserved(fn){
+  const scrollY = window.scrollY;
+  const el = document.getElementById("view");
+  const boardWrap = el ? el.querySelector(".board-wrap") : null;
+  const boardScrollX = boardWrap ? boardWrap.scrollLeft : 0;
+
+  fn();
+
+  // نرجّع الموضع فوراً وكمان بعد أي إعادة رسم لاحقة (لو confirm عطّل التوقيت)
+  const restore = () => {
+    window.scrollTo(0, scrollY);
+    const bw = document.querySelector(".board-wrap");
+    if(bw) bw.scrollLeft = boardScrollX;
+  };
+  restore();
+  requestAnimationFrame(restore);
+}
+
 /* ═══════════ أفعال ═══════════ */
-function addPerson(){ const inp=document.getElementById("newName"),name=inp.value.trim(); if(!name)return; opAddPerson(name); inp.value=""; }
-function delPerson(id){ const p=personById(id); if(p&&confirm("متأكد تحذف «"+p.name+"» وكل تسجيلاته؟")){ if(view==="person:"+id)view="people"; opDeletePerson(id); } }
+function addPerson(){ const inp=document.getElementById("newName"),name=inp.value.trim(); if(!name)return; withScrollPreserved(()=>{ opAddPerson(name); inp.value=""; }); }
+function delPerson(id){ withScrollPreserved(()=>{ const p=personById(id); if(p&&confirm("متأكد تحذف «"+p.name+"» وكل تسجيلاته؟")){ if(view==="person:"+id)view="people"; opDeletePerson(id); } }); }
 function delAssign(id){
-  const a=state.assignments.find(x=>x.id===id); if(!a) return;
-  const kids = chainChildren(id);
-  if(kids.length){
-    if(!confirm("«"+assignLabel(a)+"» ليها "+kids.length+" مراجعة متولّدة منها.\nموافق تتحذف هي وكل المراجعات دي؟")) return;
-    const ids = new Set([id, ...kids.map(k=>k.id)]);
-    state.assignments = state.assignments.filter(x=>!ids.has(x.id));
-    state.assignments.forEach(x=>{ if(ids.has(x.spawnedId)) x.spawnedId=null; });
-    localChange();
-    return;
-  }
-  if(confirm("حذف «"+assignLabel(a)+"»؟")){
-    state.assignments.forEach(x=>{ if(x.spawnedId===id) x.spawnedId=null; });
-    opDeleteAssignment(id);
-  }
+  withScrollPreserved(()=>{
+    const a=state.assignments.find(x=>x.id===id); if(!a) return;
+    const kids = chainChildren(id);
+    if(kids.length){
+      if(!confirm("«"+assignLabel(a)+"» ليها "+kids.length+" مراجعة متولّدة منها.\nموافق تتحذف هي وكل المراجعات دي؟")) return;
+      const ids = new Set([id, ...kids.map(k=>k.id)]);
+      state.assignments = state.assignments.filter(x=>!ids.has(x.id));
+      state.assignments.forEach(x=>{ if(ids.has(x.spawnedId)) x.spawnedId=null; });
+      localChange();
+      return;
+    }
+    if(confirm("حذف «"+assignLabel(a)+"»؟")){
+      state.assignments.forEach(x=>{ if(x.spawnedId===id) x.spawnedId=null; });
+      opDeleteAssignment(id);
+    }
+  });
 }
 
 /* ═══════════ نوع التسميع (جديد/مراجعة) ═══════════ */
@@ -855,61 +876,63 @@ function surahToChanged(){
 function closeDialog(){ editingId = null; dlg.close(); }
 
 function saveAssignment(){
-  const pid=document.getElementById("aPerson").value;
-  const surahFrom=+document.getElementById("aSurahFrom").value;
-  const surahTo=+document.getElementById("aSurahTo").value;
-  const nFrom=SURAHS[surahFrom][1];
-  const nTo=SURAHS[surahTo][1];
+  withScrollPreserved(()=>{
+    const pid=document.getElementById("aPerson").value;
+    const surahFrom=+document.getElementById("aSurahFrom").value;
+    const surahTo=+document.getElementById("aSurahTo").value;
+    const nFrom=SURAHS[surahFrom][1];
+    const nTo=SURAHS[surahTo][1];
 
-  let from=Math.min(Math.max(1,+document.getElementById("aFrom").value||1),nFrom);
-  let to=Math.min(Math.max(1,+document.getElementById("aTo").value||nTo),nTo);
+    let from=Math.min(Math.max(1,+document.getElementById("aFrom").value||1),nFrom);
+    let to=Math.min(Math.max(1,+document.getElementById("aTo").value||nTo),nTo);
 
-  // Validation
-  if(surahFrom > surahTo){
-    alert("«من سورة» لازم تكون قبل «إلى سورة» في ترتيب المصحف");
-    return;
-  }
-  if(surahFrom === surahTo && from > to){
-    alert("«من آية» لازم تكون أصغر من «إلى آية» في نفس السورة");
-    return;
-  }
-  if(!pid){ alert("اختار الشخص الأول"); return; }
-
-  const rep = Math.max(0, Math.min(365, +document.getElementById("aRepeat").value || 0));
-  const nxtRaw = Math.max(0, Math.min(365, +document.getElementById("aNextRepeat").value || 0));
-  const nxt = (currentAssignType === "review") ? rep : nxtRaw;
-  const dateVal = document.getElementById("aDay").value;
-
-  const data = {
-    personId: pid,
-    surahFrom: surahFrom,
-    surahTo: surahTo,
-    surah: surahFrom, // backward compat
-    fromAyah: from,
-    toAyah: to,
-    assignType: currentAssignType,
-    repeatDays: rep,
-    nextRepeat: nxt,
-    date: dateVal,
-    weekStart: weekStartStr(new Date(dateVal+"T00:00:00"))
-  };
-
-  if(editingId){
-    const kids = chainChildren(editingId).filter(c=>getStatus(c)==="pending");
-    if(kids.length && confirm("في "+kids.length+" مراجعة لاحقة متولّدة من المطلوب ده.\nتحب أعدّل فيها المقدار ومدة التكرار كمان؟")){
-      const useInt = nxt > 0 ? nxt : rep;
-      kids.forEach(c=>{
-        c.surahFrom=surahFrom; c.surahTo=surahTo; c.surah=surahFrom;
-        c.fromAyah=from; c.toAyah=to;
-        c.repeatDays=useInt; c.nextRepeat=useInt;
-      });
+    // Validation
+    if(surahFrom > surahTo){
+      alert("«من سورة» لازم تكون قبل «إلى سورة» في ترتيب المصحف");
+      return;
     }
-    opUpdateAssignment(editingId, data);
-  } else {
-    opAddAssignment(Object.assign({}, data, {done:false, status:"pending", createdAt:Date.now()}));
-  }
-  editingId = null;
-  dlg.close();
+    if(surahFrom === surahTo && from > to){
+      alert("«من آية» لازم تكون أصغر من «إلى آية» في نفس السورة");
+      return;
+    }
+    if(!pid){ alert("اختار الشخص الأول"); return; }
+
+    const rep = Math.max(0, Math.min(365, +document.getElementById("aRepeat").value || 0));
+    const nxtRaw = Math.max(0, Math.min(365, +document.getElementById("aNextRepeat").value || 0));
+    const nxt = (currentAssignType === "review") ? rep : nxtRaw;
+    const dateVal = document.getElementById("aDay").value;
+
+    const data = {
+      personId: pid,
+      surahFrom: surahFrom,
+      surahTo: surahTo,
+      surah: surahFrom, // backward compat
+      fromAyah: from,
+      toAyah: to,
+      assignType: currentAssignType,
+      repeatDays: rep,
+      nextRepeat: nxt,
+      date: dateVal,
+      weekStart: weekStartStr(new Date(dateVal+"T00:00:00"))
+    };
+
+    if(editingId){
+      const kids = chainChildren(editingId).filter(c=>getStatus(c)==="pending");
+      if(kids.length && confirm("في "+kids.length+" مراجعة لاحقة متولّدة من المطلوب ده.\nتحب أعدّل فيها المقدار ومدة التكرار كمان؟")){
+        const useInt = nxt > 0 ? nxt : rep;
+        kids.forEach(c=>{
+          c.surahFrom=surahFrom; c.surahTo=surahTo; c.surah=surahFrom;
+          c.fromAyah=from; c.toAyah=to;
+          c.repeatDays=useInt; c.nextRepeat=useInt;
+        });
+      }
+      opUpdateAssignment(editingId, data);
+    } else {
+      opAddAssignment(Object.assign({}, data, {done:false, status:"pending", createdAt:Date.now()}));
+    }
+    editingId = null;
+    dlg.close();
+  });
 }
 
 /* ═══════════ الجولة التعريفية ═══════════ */
