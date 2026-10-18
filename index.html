@@ -547,6 +547,21 @@ function repeatText(a){
   return nx !== r ? ` · 🔁 بعد ${r} يوم ثم كل ${nx} يوم` : ` · 🔁 كل ${r} يوم`;
 }
 
+// ترتيب المطلوبات حسب ترتيب المصحف: السورة أولاً، ثم الآية، ثم نهاية المقدار.
+// ندعم الصيغة القديمة (surah) دون تغيير بيانات التسميع المحفوظة.
+function compareAssignmentsByMushaf(a,b){
+  const startA = +(a.surahFrom ?? a.surah ?? 0);
+  const startB = +(b.surahFrom ?? b.surah ?? 0);
+  const endA = +(a.surahTo ?? a.surahFrom ?? a.surah ?? 0);
+  const endB = +(b.surahTo ?? b.surahFrom ?? b.surah ?? 0);
+  return startA - startB
+    || (+a.fromAyah || 1) - (+b.fromAyah || 1)
+    || endA - endB
+    || (+a.toAyah || 1) - (+b.toAyah || 1)
+    || aDate(a).localeCompare(aDate(b))
+    || (a.createdAt || 0) - (b.createdAt || 0);
+}
+
 function sortedPeople(){ return [...state.people].sort((a,b)=>(a.createdAt||0)-(b.createdAt||0)); }
 
 function go(v){
@@ -680,7 +695,7 @@ function renderBoard(){
   for(const p of sortedPeople()){
     h+=`<tr><td class="pname" onclick="go('person:${p.id}')">${esc(p.name)}</td>`;
     for(const d of dates){
-      const cell=wa.filter(a=>a.personId===p.id&&aDate(a)===d);
+      const cell=wa.filter(a=>a.personId===p.id&&aDate(a)===d).sort(compareAssignmentsByMushaf);
       h+=`<td><div class="cellchips">`;
       for(const a of cell){
         const st=getStatus(a), icon=st==="done"?"✅":st==="absent"?"❌":"⬜";
@@ -715,7 +730,8 @@ function renderPeople(){
 function renderPerson(id){
   const p=personById(id);
   if(!p) return `<div class="card empty">الشخص ده اتحذف</div>`;
-  const list=state.assignments.filter(a=>a.personId===id).sort((a,b)=>b.weekStart.localeCompare(a.weekStart)||aDate(a).localeCompare(aDate(b)));
+  const list=state.assignments.filter(a=>a.personId===id).sort((a,b)=>
+    b.weekStart.localeCompare(a.weekStart) || compareAssignmentsByMushaf(a,b));
   let h=`<span class="back" onclick="go('people')">→ رجوع للأشخاص</span>
   <div class="card"><div class="person-head" style="margin-bottom:6px"><h2 style="font-size:1.15rem">${esc(p.name)}</h2>
     <div class="row"><button class="primary" onclick="openDialog('${id}')">＋ إضافة مطلوب</button>
