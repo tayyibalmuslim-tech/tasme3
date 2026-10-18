@@ -449,7 +449,9 @@ function opCycleStatus(id){
   const cur=getStatus(a);
   const next = cur==="pending"?"done":cur==="done"?"absent":"pending";
   a.status=next; a.done=(next==="done"); a.updatedAt=Date.now();
-  if(next==="done") spawnRepeat(a); else removeSpawn(a);
+  // التسميع الناجح يتكرر حسب المدة، والمراجعة الفائتة تعاد في اليوم التالي.
+  if(next==="done" || (next==="absent" && a.assignType==="review")) spawnRepeat(a);
+  else removeSpawn(a);
   localChange();
 }
 function opDeleteAssignment(id){ state.assignments=state.assignments.filter(x=>x.id!==id); localChange(); }
@@ -461,31 +463,46 @@ function opUpdateAssignment(id, patch){
 /* ═══════════ التكرار التلقائي ═══════════ */
 function addDaysStr(ds, n){ const d=new Date(ds+"T00:00:00"); d.setDate(d.getDate()+n); return toStr(d); }
 
-/* أول ما يتعلّم ✅ → بتتولّد نسخة «مراجعة» بعد عدد الأيام المحدد */
+/* ✅ بعد المدة المحددة؛ ❌ المراجعة الفائتة في اليوم التالي مع حفظ سجل التخلف. */
 function spawnRepeat(a){
-  const r = +a.repeatDays || 0;
+  const retryAfterAbsence = getStatus(a)==="absent" && a.assignType==="review";
+  const r = retryAfterAbsence ? 1 : (+a.repeatDays || 0);
   if(r <= 0) return;
-  if(a.spawnedId && state.assignments.some(x=>x.id===a.spawnedId)) return; // اتولّدت قبل كده
-  const nextInt = (+a.nextRepeat || 0) > 0 ? +a.nextRepeat : r;
+  const nextInt = (+a.nextRepeat || 0) > 0 ? +a.nextRepeat : (+a.repeatDays || 0);
   const d = addDaysStr(aDate(a), r);
+  const wk = weekStartStr(new Date(d+"T00:00:00"));
+
+  // لو كانت المراجعة التالية قد تولّدت بعد ✅ ثم تغيرت إلى ❌، نغيّر
+  // موعد النسخة المعلقة نفسها بدل إنشاء نسخة مكررة أو المساس بسجل منجَز.
+  const existing = a.spawnedId && state.assignments.find(x=>x.id===a.spawnedId);
+  if(existing){
+    if(existing.autoGen && getStatus(existing)==="pending" && !existing.spawnedId){
+      existing.date=d;
+      existing.weekStart=wk;
+      existing.retryAfterAbsence=retryAfterAbsence;
+      existing.updatedAt=Date.now();
+    }
+    return;
+  }
+
   const child = {
     id: uid(),
     personId: a.personId,
     surahFrom: a.surahFrom, surahTo: a.surahTo, surah: a.surah,
     fromAyah: a.fromAyah, toAyah: a.toAyah,
-    assignType: "review",              // دايماً بترجع مراجعة مش حفظ جديد
+    assignType: "review",
+    // التأجيل ليوم واحد لا يغيّر دورة المراجعة الأصلية بعد إنجازها.
     repeatDays: nextInt, nextRepeat: nextInt,
-    date: d,
-    weekStart: weekStartStr(new Date(d+"T00:00:00")),
+    date: d, weekStart: wk,
     status: "pending", done: false,
     parentId: a.id, rootId: a.rootId || a.id,
-    autoGen: true, createdAt: Date.now()
+    autoGen: true, retryAfterAbsence, createdAt: Date.now()
   };
   state.assignments.push(child);
   a.spawnedId = child.id;
 }
 
-/* لو شال علامة ✅ → المراجعة اللي اتولّدت بتتشال (طالما لسه ما اتسمّعتش) */
+/* إلغاء الحالة يحذف النسخة المعلقة فقط؛ التسميع الذي سُجّل لاحقاً لا يُحذف. */
 function removeSpawn(a){
   if(!a.spawnedId) return;
   const c = state.assignments.find(x=>x.id===a.spawnedId);
@@ -743,7 +760,7 @@ function renderPerson(id){
     const st=getStatus(a);
     const tc=assignTypeClass(a);
     h+=`<div class="assign-item ${tc}"><span>${assignTypeLabel(a)} ${esc(assignLabel(a))}
-        <span class="hint">— ${dayLabel(aDate(a))}${repeatText(a)}${a.autoGen?" · مُرحّلة تلقائياً":""}</span></span>
+        <span class="hint">— ${dayLabel(aDate(a))}${repeatText(a)}${a.retryAfterAbsence?" · إعادة بعد عدم التسميع":a.autoGen?" · مُرحّلة تلقائياً":""}</span></span>
       <span class="row"><button class="status-btn ${st}" onclick="opCycleStatus('${a.id}')">${st==="done"?"✅ سمّع":st==="absent"?"❌ تخلف":"⬜ لم يسمّع"}</button>
       <button class="edit" onclick="openDialog(null,null,'${a.id}')">✎ تعديل</button>
       <button class="danger" onclick="delAssign('${a.id}')">حذف</button></span></div>`;
@@ -960,7 +977,7 @@ const TOUR_STEPS = [
   { target:"#navBoard", title:"📋 اللوحة",
     text:"دي الشاشة الرئيسية: جدول أسبوعي لكل شخص وكل يوم. اضغط ＋ في أي خلية عشان تضيف مطلوب حفظ (جديد 🆕 أو مراجعة 🔁)، واضغط على المطلوب نفسه عشان تغيّر حالته: ⬜ لم يسمّع ← ✅ سمّع ← ❌ تخلف." },
   { title:"🔁 التكرار التلقائي",
-    text:"وأنت بتضيف مطلوب، حدّد «التكرار». لو حفظ جديد وحطيت ٢ يوم: أول ما تعلّم عليه ✅ هيظهر تاني بعد يومين لكن كـ«مراجعة» مش حفظ جديد. ولو مراجعة تكرارها أسبوع: كل ما تعلّم ✅ هتتولّد مراجعة جديدة بعد أسبوع — وهكذا من غير ما تشيل هم." },
+    text:"وأنت بتضيف مطلوب، حدّد «التكرار». عند ✅ يتكرر بعد المدة المحددة كمراجعة. ولو كانت المهمة «مراجعة» وعلّمت ❌ تخلف، هتتضاف نفس المراجعة لليوم التالي تلقائياً مع حفظ التخلف في يومه الأصلي؛ وبعد إنجازها ترجع لمدتها المعتادة." },
   { title:"✎ التعديل",
     text:"أي مطلوب تقدر تعدّله: اضغط على علامة ✎ جنبه في اللوحة، أو زر «تعديل» من صفحة الشخص. تغيّر المقدار (السور والآيات) أو مدة التكرار أو اليوم أو النوع." },
   { target:"#navSync", title:"☁️ كودك",
