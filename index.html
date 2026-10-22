@@ -32,7 +32,7 @@ button.danger{background:none; border:1px solid var(--red); color:var(--red);
   padding:5px 12px; border-radius:8px; cursor:pointer; font-size:.85rem;}
 button.ghost{background:none; border:1px solid var(--line); color:var(--txt);
   padding:6px 12px; border-radius:8px; cursor:pointer;}
-input[type=text], input[type=number], select{
+input[type=text], input[type=number], input[type=date], select{
   padding:9px 10px; border:1px solid var(--line); border-radius:8px;
   font-size:.95rem; background:#fff; color:var(--txt); width:100%;}
 .row{display:flex; gap:8px; align-items:center; flex-wrap:wrap;}
@@ -186,7 +186,9 @@ button.edit:hover{background:var(--blue-light);}
 <dialog id="assignDialog">
   <h3 id="dlgTitle">إضافة مطلوب حفظ</h3>
   <div class="field"><label>الشخص</label><select id="aPerson"></select></div>
-  <div class="field"><label>اليوم</label><select id="aDay"></select></div>
+  <div class="field"><label for="aDay">التاريخ</label><input type="date" id="aDay" required>
+    <div class="hint">يمكنك اختيار أي تاريخ، حتى خارج الأسبوع المعروض.</div>
+  </div>
   <div class="field">
     <label>النوع</label>
     <div class="type-toggle" id="aTypeToggle">
@@ -860,7 +862,7 @@ function openDialog(pid, date, editId){
   const dates = weekDates(wk);
   const today = toStr(new Date());
   const def = a ? aDate(a) : (date || (dates.includes(today) ? today : dates[0]));
-  document.getElementById("aDay").innerHTML = dates.map(d=>`<option value="${d}" ${d===def?"selected":""}>${dayLabel(d)}</option>`).join("");
+  document.getElementById("aDay").value = def;
 
   populateSurahSelect("aSurahFrom");
   populateSurahSelect("aSurahTo");
@@ -933,7 +935,12 @@ function saveAssignment(){
     const rep = Math.max(0, Math.min(365, +document.getElementById("aRepeat").value || 0));
     const nxtRaw = Math.max(0, Math.min(365, +document.getElementById("aNextRepeat").value || 0));
     const nxt = (currentAssignType === "review") ? rep : nxtRaw;
-    const dateVal = document.getElementById("aDay").value;
+    const dateInput = document.getElementById("aDay");
+    const dateVal = dateInput.value;
+    if(!dateVal || !dateInput.checkValidity()){
+      dateInput.reportValidity();
+      return;
+    }
 
     const data = {
       personId: pid,
@@ -1051,3 +1058,4 @@ document.getElementById("tourOverlay").addEventListener("click", e=>{
 </script>
 </body>
 </html>
+
