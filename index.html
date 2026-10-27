@@ -167,6 +167,23 @@ button.edit:hover{background:var(--blue-light);}
 #navHelp{background:rgba(255,255,255,.18); border:none; color:#fff;
   padding:8px 14px; border-radius:8px; cursor:pointer; font-size:.95rem;}
 #navHelp:hover{background:rgba(255,255,255,.32);}
+
+/* ═══════ تحديد عدة مطلوبات والتعديل الجماعي ═══════ */
+.multi-bar{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:8px 0 12px;}
+.multi-bar .count{font-size:.85rem;color:var(--green-dark);font-weight:700;margin-inline:4px;}
+.multi-bar button{font-size:.83rem;padding:5px 10px;}
+.multi-bar button:disabled{opacity:.45;cursor:not-allowed;}
+.multi-check{width:16px;height:16px;accent-color:var(--green);cursor:pointer;flex-shrink:0;}
+.chip.small.multi-active,.assign-item.multi-active{background:var(--green-light);outline:2px solid var(--green);outline-offset:-2px;}
+.assign-item.multi-selectable{cursor:pointer;}
+.bulk-dialog{width:min(540px,94vw);max-height:86vh;overflow-y:auto;}
+.bulk-field{padding:9px 0;border-bottom:1px solid var(--line);}
+.bulk-flag{display:flex;gap:8px;align-items:center;color:var(--txt);font-weight:700;font-size:.9rem;cursor:pointer;margin-bottom:6px;}
+.bulk-flag input{width:17px;height:17px;accent-color:var(--green);}
+.bulk-control{padding-inline-start:25px;}
+.bulk-control input:disabled,.bulk-control select:disabled{opacity:.5;background:#f3f5f3;}
+.bulk-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;}
+.bulk-dialog .hint{line-height:1.65;}
 </style>
 </head>
 <body>
@@ -250,6 +267,54 @@ button.edit:hover{background:var(--blue-light);}
   </div>
 </dialog>
 
+
+<dialog id="bulkDialog" class="bulk-dialog" aria-labelledby="bulkDlgTitle">
+  <h3 id="bulkDlgTitle">✎ تعديل عدة مطلوبات</h3>
+  <p id="bulkCountText" class="hint"></p>
+  <p class="hint">فعّل علامة الصح بجوار كل حقل تريد تغييره. الحقول غير المحددة ستبقى كما هي لكل مهمة.</p>
+
+  <div class="bulk-field">
+    <label class="bulk-flag"><input type="checkbox" id="bulkDateOn" onchange="setBulkEnabled('bulkDateOn','bulkDateGroup')"> تغيير التاريخ</label>
+    <div id="bulkDateGroup" class="bulk-control"><input id="bulkDate" type="date" required></div>
+  </div>
+  <div class="bulk-field">
+    <label class="bulk-flag"><input type="checkbox" id="bulkPersonOn" onchange="setBulkEnabled('bulkPersonOn','bulkPersonGroup')"> تغيير الشخص</label>
+    <div id="bulkPersonGroup" class="bulk-control"><select id="bulkPerson"></select></div>
+  </div>
+  <div class="bulk-field">
+    <label class="bulk-flag"><input type="checkbox" id="bulkTypeOn" onchange="setBulkEnabled('bulkTypeOn','bulkTypeGroup')"> تغيير النوع</label>
+    <div id="bulkTypeGroup" class="bulk-control"><select id="bulkType"><option value="new">🆕 جديد</option><option value="review">🔁 مراجعة</option></select></div>
+  </div>
+  <div class="bulk-field">
+    <label class="bulk-flag"><input type="checkbox" id="bulkRangeOn" onchange="setBulkEnabled('bulkRangeOn','bulkRangeGroup')"> تغيير السور والآيات</label>
+    <div id="bulkRangeGroup" class="bulk-control bulk-grid">
+      <div><label for="bulkSurahFrom">من سورة</label><select id="bulkSurahFrom" onchange="bulkRangeHint()"></select></div>
+      <div><label for="bulkFrom">من آية</label><input type="number" id="bulkFrom" min="1" required></div>
+      <div><label for="bulkSurahTo">إلى سورة</label><select id="bulkSurahTo" onchange="bulkRangeHint()"></select></div>
+      <div><label for="bulkTo">إلى آية</label><input type="number" id="bulkTo" min="1" required></div>
+    </div>
+  </div>
+  <div class="bulk-field">
+    <label class="bulk-flag"><input type="checkbox" id="bulkRepeatOn" onchange="setBulkEnabled('bulkRepeatOn','bulkRepeatGroup')"> تغيير التكرار</label>
+    <div id="bulkRepeatGroup" class="bulk-control bulk-grid">
+      <div><label for="bulkRepeat">بعد كام يوم؟</label><input type="number" id="bulkRepeat" min="0" max="365" required></div>
+      <div><label for="bulkNextRepeat">التكرار التالي (٠ = نفس المدة)</label><input type="number" id="bulkNextRepeat" min="0" max="365" required></div>
+    </div>
+  </div>
+  <div class="bulk-field">
+    <label class="bulk-flag"><input type="checkbox" id="bulkStatusOn" onchange="setBulkEnabled('bulkStatusOn','bulkStatusGroup')"> تغيير حالة التسميع</label>
+    <div id="bulkStatusGroup" class="bulk-control"><select id="bulkStatus">
+      <option value="pending">⬜ لم يسمّع</option>
+      <option value="done">✅ سمّع</option>
+      <option value="absent">❌ تخلف</option>
+    </select></div>
+  </div>
+  <div class="row" style="justify-content:flex-end;margin-top:12px">
+    <button class="ghost" onclick="closeBulkDialog()">إلغاء</button>
+    <button class="primary" onclick="saveBulkEdit()">حفظ التعديلات للجميع</button>
+  </div>
+</dialog>
+
 <!-- الجولة التعريفية -->
 <div id="tourOverlay">
   <div class="tour-box" id="tourBox">
@@ -279,13 +344,17 @@ let state = {people:[], assignments:[]};
 let view = "board";
 let selectedWeek = weekStartStr(new Date());
 let currentAssignType = "new";
+// هذه الحالة للواجهة فقط، ولا تدخل في البيانات المتزامنة.
+let multiMode = false;
+const selectedAssignIds = new Set();
+let bulkTargetIds = [];
 
 /* ═══════════ أدوات الأسابيع (يبدأ السبت) ═══════════ */
 function weekStartOf(d){ const x=new Date(d); x.setDate(x.getDate()-(x.getDay()+1)%7); x.setHours(0,0,0,0); return x; }
 function toStr(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
 function weekStartStr(d){ return toStr(weekStartOf(d)); }
 function weekLabel(ws){ const a=new Date(ws+"T00:00:00"),b=new Date(a);b.setDate(b.getDate()+6); const f=new Intl.DateTimeFormat("ar-EG",{day:"numeric",month:"long"}); return f.format(a)+" – "+f.format(b); }
-function shiftWeek(n){ const d=new Date(selectedWeek+"T00:00:00"); d.setDate(d.getDate()+n*7); selectedWeek=toStr(d); render(); }
+function shiftWeek(n){ const d=new Date(selectedWeek+"T00:00:00"); d.setDate(d.getDate()+n*7); selectedWeek=toStr(d); multiMode=false; selectedAssignIds.clear(); render(); }
 const DAYS=["السبت","الأحد","الاثنين","الثلاثاء","الأربعاء","الخميس","الجمعة"];
 function weekDates(ws){ const a=new Date(ws+"T00:00:00"); return Array.from({length:7},(_,i)=>{const d=new Date(a);d.setDate(d.getDate()+i);return toStr(d);}); }
 function aDate(a){ return a.date||a.weekStart; }
@@ -584,6 +653,7 @@ function compareAssignmentsByMushaf(a,b){
 function sortedPeople(){ return [...state.people].sort((a,b)=>(a.createdAt||0)-(b.createdAt||0)); }
 
 function go(v){
+  multiMode=false; selectedAssignIds.clear();
   view = v;
   document.getElementById("navBoard").className  = v==="board" ? "active" : "";
   document.getElementById("navPeople").className = (v==="people"||v.startsWith("person:")) ? "active" : "";
@@ -690,6 +760,205 @@ function copySyncCode(btn){
   }).catch(()=>prompt("انسخ الكود:",syncCode));
 }
 
+/* ═══════════ الاختيار المتعدد والتعديل الجماعي ═══════════ */
+function visibleAssignments(){
+  if(view==="board"){
+    const peopleIds = new Set(state.people.map(p=>p.id));
+    return state.assignments.filter(a=>a.weekStart===selectedWeek && peopleIds.has(a.personId));
+  }
+  if(view.startsWith("person:")) return state.assignments.filter(a=>a.personId===view.slice(7));
+  return [];
+}
+function selectedVisibleIds(){
+  const visible = new Set(visibleAssignments().map(a=>a.id));
+  return [...selectedAssignIds].filter(id=>visible.has(id));
+}
+function toggleMultiMode(){
+  multiMode=!multiMode;
+  selectedAssignIds.clear();
+  render();
+}
+function toggleMultiItem(id){
+  if(!multiMode) return;
+  if(selectedAssignIds.has(id)) selectedAssignIds.delete(id);
+  else if(visibleAssignments().some(a=>a.id===id)) selectedAssignIds.add(id);
+  render();
+}
+function selectAllVisible(){
+  visibleAssignments().forEach(a=>selectedAssignIds.add(a.id));
+  render();
+}
+function clearMultiSelection(){ selectedAssignIds.clear(); render(); }
+function renderMultiToolbar(){
+  const count=selectedVisibleIds().length;
+  return `<div class="multi-bar">
+    <button class="${multiMode?"edit":"ghost"}" onclick="toggleMultiMode()">☑ ${multiMode?"إنهاء التحديد":"تحديد عدة مهام"}</button>
+    ${multiMode?`<span class="count">${count} محددة</span>
+    <button class="ghost" onclick="selectAllVisible()">تحديد الكل</button>
+    <button class="ghost" onclick="clearMultiSelection()">إلغاء التحديد</button>
+    <button class="primary" onclick="openBulkDialog()" ${count?"":"disabled"}>✎ تعديل المحدد</button>`:""}
+  </div>`;
+}
+const BULK_FIELDS=[
+  ["bulkDateOn","bulkDateGroup"],["bulkPersonOn","bulkPersonGroup"],
+  ["bulkTypeOn","bulkTypeGroup"],["bulkRangeOn","bulkRangeGroup"],
+  ["bulkRepeatOn","bulkRepeatGroup"],["bulkStatusOn","bulkStatusGroup"]
+];
+function setBulkEnabled(flag,group){
+  const enabled=document.getElementById(flag).checked;
+  document.querySelectorAll("#"+group+" input, #"+group+" select").forEach(el=>el.disabled=!enabled);
+}
+function bulkRangeHint(){
+  const sf=+document.getElementById("bulkSurahFrom").value;
+  const st=+document.getElementById("bulkSurahTo").value;
+  document.getElementById("bulkFrom").max=SURAHS[sf][1];
+  document.getElementById("bulkTo").max=SURAHS[st][1];
+}
+function openBulkDialog(){
+  bulkTargetIds=selectedVisibleIds();
+  if(!bulkTargetIds.length) return;
+  const first=state.assignments.find(a=>a.id===bulkTargetIds[0]);
+  document.getElementById("bulkCountText").textContent="سيُطبَّق التعديل على "+bulkTargetIds.length+" مهمة تسميع محددة.";
+  document.getElementById("bulkDate").value=aDate(first);
+  document.getElementById("bulkPerson").innerHTML=sortedPeople().map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join("");
+  document.getElementById("bulkPerson").value=first.personId;
+  document.getElementById("bulkType").value=first.assignType==="review"?"review":"new";
+  const opts=SURAHS.map((surah,i)=>`<option value="${i}">${i+1}. ${surah[0]}</option>`).join("");
+  document.getElementById("bulkSurahFrom").innerHTML=opts;
+  document.getElementById("bulkSurahTo").innerHTML=opts;
+  document.getElementById("bulkSurahFrom").value=first.surahFrom??first.surah??0;
+  document.getElementById("bulkSurahTo").value=first.surahTo??first.surahFrom??first.surah??0;
+  document.getElementById("bulkFrom").value=first.fromAyah||1;
+  document.getElementById("bulkTo").value=first.toAyah||1;
+  bulkRangeHint();
+  document.getElementById("bulkRepeat").value=+first.repeatDays||0;
+  document.getElementById("bulkNextRepeat").value=+first.nextRepeat||0;
+  document.getElementById("bulkStatus").value=getStatus(first);
+  BULK_FIELDS.forEach(([flag,group])=>{
+    document.getElementById(flag).checked=false;
+    setBulkEnabled(flag,group);
+  });
+  document.getElementById("bulkDialog").showModal();
+}
+function closeBulkDialog(){
+  document.getElementById("bulkDialog").close();
+  bulkTargetIds=[];
+}
+function saveBulkEdit(){
+  const on=id=>document.getElementById(id).checked;
+  if(!BULK_FIELDS.some(([flag])=>on(flag))){ alert("اختر حقلاً واحداً على الأقل لتعديله."); return; }
+  const targets=bulkTargetIds.map(id=>state.assignments.find(a=>a.id===id)).filter(Boolean);
+  if(!targets.length){ alert("المهام المحددة لم تعد موجودة."); closeBulkDialog(); clearMultiSelection(); return; }
+  const patch={};
+  if(on("bulkDateOn")){
+    const inp=document.getElementById("bulkDate");
+    if(!inp.value || !inp.checkValidity()){ inp.reportValidity(); return; }
+    patch.date=inp.value;
+    patch.weekStart=weekStartStr(new Date(inp.value+"T00:00:00"));
+  }
+  if(on("bulkPersonOn")){
+    const pid=document.getElementById("bulkPerson").value;
+    if(!state.people.some(p=>p.id===pid)){ alert("اختر شخصاً صحيحاً."); return; }
+    patch.personId=pid;
+  }
+  if(on("bulkTypeOn")) patch.assignType=document.getElementById("bulkType").value;
+  if(on("bulkRangeOn")){
+    const sf=+document.getElementById("bulkSurahFrom").value;
+    const st=+document.getElementById("bulkSurahTo").value;
+    const from=+document.getElementById("bulkFrom").value;
+    const to=+document.getElementById("bulkTo").value;
+    if(!Number.isInteger(sf)||!Number.isInteger(st)||sf<0||st<0||sf>=SURAHS.length||st>=SURAHS.length||sf>st
+      ||!Number.isInteger(from)||from<1||from>SURAHS[sf][1]
+      ||!Number.isInteger(to)||to<1||to>SURAHS[st][1]
+      ||(sf===st&&from>to)){
+      alert("راجع ترتيب السور وحدود الآيات؛ البداية يجب أن تسبق النهاية."); return;
+    }
+    Object.assign(patch,{surahFrom:sf,surahTo:st,surah:sf,fromAyah:from,toAyah:to});
+  }
+  if(on("bulkRepeatOn")){
+    const repInput=document.getElementById("bulkRepeat");
+    const nextInput=document.getElementById("bulkNextRepeat");
+    const rep=+repInput.value, next=+nextInput.value;
+    if(!repInput.value.trim()||!nextInput.value.trim()
+      ||!Number.isInteger(rep)||rep<0||rep>365
+      ||!Number.isInteger(next)||next<0||next>365){
+      alert("عدد أيام التكرار لازم يكون عدداً صحيحاً بين ٠ و٣٦٥."); return;
+    }
+    patch.repeatDays=rep; patch.nextRepeat=next;
+  }
+  const changeStatus=on("bulkStatusOn");
+  const chosenStatus=document.getElementById("bulkStatus").value;
+  if(changeStatus && !["pending","done","absent"].includes(chosenStatus)) return;
+
+  const hasDescendantFields=on("bulkRangeOn")||on("bulkRepeatOn")||on("bulkPersonOn");
+  const targetSet=new Set(targets.map(a=>a.id));
+  const descendants=new Map();
+  if(hasDescendantFields){
+    targets.forEach(a=>chainChildren(a.id).forEach(child=>{
+      if(getStatus(child)==="pending"&&!targetSet.has(child.id)){
+        const arr=descendants.get(child.id)||[];
+        arr.push(a);
+        descendants.set(child.id,arr);
+      }
+    }));
+  }
+  const updateDescendants=descendants.size>0 && confirm(
+    "هناك "+descendants.size+" مراجعة معلّقة متولّدة من المهام المحددة.\n"+
+    "هل تريد نقل تعديلات الشخص والمقدار والتكرار إليها أيضاً؟\n"+
+    "اختيار «إلغاء» هنا سيُبقيها كما هي ويعدّل المهام المحددة فقط."
+  );
+  withScrollPreserved(()=>{
+    const now=Date.now();
+    targets.forEach(a=>{
+      Object.assign(a,patch);
+      if(changeStatus){ a.status=chosenStatus; a.done=chosenStatus==="done"; }
+      a.updatedAt=now;
+    });
+    if(updateDescendants){
+      // لو عدة مهام من سلسلة واحدة محددة، لا نكتب فوق تعديل أي مهمة محددة.
+      descendants.forEach((parents,id)=>{
+        const child=state.assignments.find(a=>a.id===id);
+        if(!child) return;
+        if(on("bulkPersonOn")) child.personId=patch.personId;
+        if(on("bulkRangeOn")){
+          child.surahFrom=patch.surahFrom; child.surahTo=patch.surahTo; child.surah=patch.surah;
+          child.fromAyah=patch.fromAyah; child.toAyah=patch.toAyah;
+        }
+        if(on("bulkRepeatOn")){
+          const interval=patch.nextRepeat>0?patch.nextRepeat:patch.repeatDays;
+          child.repeatDays=interval; child.nextRepeat=interval;
+        }
+        child.updatedAt=now;
+      });
+    }
+    // إعادة احتساب النسخ المعلّقة عند تغيير الحالة أو الجدولة، دون مساس بالمكتمل منها.
+    if(changeStatus||on("bulkDateOn")||on("bulkRepeatOn")||on("bulkTypeOn")){
+      targets.forEach(a=>{
+        const st=getStatus(a);
+        const repeats=(st==="done" && (+a.repeatDays||0)>0)||(st==="absent"&&a.assignType==="review");
+        // لا نحذف أو نغيّر موعد مراجعة اختارها المستخدم صراحةً ضمن المجموعة.
+        if(a.spawnedId && targetSet.has(a.spawnedId)){
+          if(!repeats){
+            const child=state.assignments.find(x=>x.id===a.spawnedId);
+            if(child && child.parentId===a.id){
+              child.parentId=null; child.autoGen=false; child.retryAfterAbsence=false;
+              child.rootId=child.id;
+              chainChildren(child.id).forEach(c=>{c.rootId=child.id;});
+            }
+            a.spawnedId=null;
+          }
+        } else if(repeats) spawnRepeat(a);
+        else removeSpawn(a);
+      });
+    }
+    document.getElementById("bulkDialog").close();
+    bulkTargetIds=[];
+    selectedAssignIds.clear();
+    multiMode=false;
+    localChange(); // عملية حفظ ومزامنة واحدة لكل المجموعة
+  });
+}
+
 /* ═══════════ اللوحة ═══════════ */
 function renderBoard(){
   const wa = state.assignments.filter(a=>a.weekStart===selectedWeek);
@@ -698,11 +967,12 @@ function renderBoard(){
   let h=`<div class="week-nav"><button onclick="shiftWeek(1)">‹ التالي</button>
     <span class="label">أسبوع ${weekLabel(selectedWeek)}${isCur?" (الحالي)":""}</span>
     <button onclick="shiftWeek(-1)">السابق ›</button></div>`;
-  if(!isCur) h+=`<div style="text-align:center;margin-bottom:10px"><button class="ghost" onclick="selectedWeek=weekStartStr(new Date());render()">↩ رجوع للأسبوع الحالي</button></div>`;
+  if(!isCur) h+=`<div style="text-align:center;margin-bottom:10px"><button class="ghost" onclick="selectedWeek=weekStartStr(new Date());multiMode=false;selectedAssignIds.clear();render()">↩ رجوع للأسبوع الحالي</button></div>`;
   const absent=wa.filter(a=>getStatus(a)==="absent").length;
   const newCount=wa.filter(a=>(a.assignType||"new")==="new").length;
   const reviewCount=wa.filter(a=>a.assignType==="review").length;
   if(wa.length) h+=`<div class="stats">✅ سمّع ${done} · ❌ تخلف ${absent} · من ${wa.length} مطلوب (🆕 ${newCount} جديد · 🔁 ${reviewCount} مراجعة)</div>`;
+  h+=renderMultiToolbar();
   if(!state.people.length) return h+`<div class="card"><div class="empty">لسه مفيش أشخاص — روح لتبويب «الأشخاص» وضيف أصحابك 👋</div></div>`;
   const dates=weekDates(selectedWeek), todayStr=toStr(new Date());
   h+=`<div class="card board-wrap"><table class="board"><tr><th>الاسم</th>`;
@@ -719,7 +989,11 @@ function renderBoard(){
       for(const a of cell){
         const st=getStatus(a), icon=st==="done"?"✅":st==="absent"?"❌":"⬜";
         const tc=assignTypeClass(a);
-        h+=`<span class="chip small ${st==="done"?"done":st==="absent"?"absent":""} ${tc}" onclick="opCycleStatus('${a.id}')" title="اضغط لتغيير الحالة">${assignTypeLabel(a)} ${icon} ${esc(assignLabel(a))} ${repeatBadge(a)}<span class="ed" title="تعديل" onclick="event.stopPropagation();openDialog(null,null,'${a.id}')">✎</span><span class="x" onclick="event.stopPropagation();delAssign('${a.id}')">×</span></span>`;
+        const chosen=selectedAssignIds.has(a.id);
+        const clickAction=multiMode?`toggleMultiItem('${a.id}')`:`opCycleStatus('${a.id}')`;
+        const checkbox=multiMode?`<input class="multi-check" type="checkbox" aria-label="تحديد ${esc(assignLabel(a))}" ${chosen?"checked":""} onclick="event.stopPropagation()" onchange="toggleMultiItem('${a.id}')">`:"";
+        const actions=multiMode?"":`<span class="ed" title="تعديل" onclick="event.stopPropagation();openDialog(null,null,'${a.id}')">✎</span><span class="x" onclick="event.stopPropagation();delAssign('${a.id}')">×</span>`;
+        h+=`<span class="chip small ${st==="done"?"done":st==="absent"?"absent":""} ${tc} ${chosen&&multiMode?"multi-active":""}" onclick="${clickAction}" title="${multiMode?"اضغط للتحديد":"اضغط لتغيير الحالة"}">${checkbox} ${assignTypeLabel(a)} ${icon} ${esc(assignLabel(a))} ${repeatBadge(a)}${actions}</span>`;
       }
       h+=`<button class="addday" onclick="openDialog('${p.id}','${d}')">＋</button></div></td>`;
     }
@@ -754,18 +1028,22 @@ function renderPerson(id){
   let h=`<span class="back" onclick="go('people')">→ رجوع للأشخاص</span>
   <div class="card"><div class="person-head" style="margin-bottom:6px"><h2 style="font-size:1.15rem">${esc(p.name)}</h2>
     <div class="row"><button class="primary" onclick="openDialog('${id}')">＋ إضافة مطلوب</button>
-    <button class="danger" onclick="delPerson('${id}')">حذف الشخص</button></div></div>`;
+    <button class="danger" onclick="delPerson('${id}')">حذف الشخص</button></div></div>${renderMultiToolbar()}`;
   if(!list.length) h+=`<div class="empty">لسه مفيش أي مطلوب مسجّل</div>`;
   let lastW=null;
   for(const a of list){
     if(a.weekStart!==lastW){ lastW=a.weekStart; h+=`<div class="week-title">أسبوع ${weekLabel(a.weekStart)}</div>`; }
     const st=getStatus(a);
     const tc=assignTypeClass(a);
-    h+=`<div class="assign-item ${tc}"><span>${assignTypeLabel(a)} ${esc(assignLabel(a))}
-        <span class="hint">— ${dayLabel(aDate(a))}${repeatText(a)}${a.retryAfterAbsence?" · إعادة بعد عدم التسميع":a.autoGen?" · مُرحّلة تلقائياً":""}</span></span>
-      <span class="row"><button class="status-btn ${st}" onclick="opCycleStatus('${a.id}')">${st==="done"?"✅ سمّع":st==="absent"?"❌ تخلف":"⬜ لم يسمّع"}</button>
+    const chosen=multiMode&&selectedAssignIds.has(a.id);
+    const personActions=multiMode
+      ?`<input type="checkbox" class="multi-check" aria-label="تحديد ${esc(assignLabel(a))}" ${chosen?"checked":""} onclick="event.stopPropagation()" onchange="toggleMultiItem('${a.id}')">`
+      :`<button class="status-btn ${st}" onclick="opCycleStatus('${a.id}')">${st==="done"?"✅ سمّع":st==="absent"?"❌ تخلف":"⬜ لم يسمّع"}</button>
       <button class="edit" onclick="openDialog(null,null,'${a.id}')">✎ تعديل</button>
-      <button class="danger" onclick="delAssign('${a.id}')">حذف</button></span></div>`;
+      <button class="danger" onclick="delAssign('${a.id}')">حذف</button>`;
+    h+=`<div class="assign-item ${tc} ${multiMode?"multi-selectable":""} ${chosen?"multi-active":""}" ${multiMode?`onclick="toggleMultiItem('${a.id}')"`:""}><span>${assignTypeLabel(a)} ${esc(assignLabel(a))}
+        <span class="hint">— ${dayLabel(aDate(a))}${repeatText(a)}${a.retryAfterAbsence?" · إعادة بعد عدم التسميع":a.autoGen?" · مُرحّلة تلقائياً":""}</span></span>
+      <span class="row">${personActions}</span></div>`;
   }
   h+=`</div>`; return h;
 }
@@ -986,7 +1264,7 @@ const TOUR_STEPS = [
   { title:"🔁 التكرار التلقائي",
     text:"وأنت بتضيف مطلوب، حدّد «التكرار». عند ✅ يتكرر بعد المدة المحددة كمراجعة. ولو كانت المهمة «مراجعة» وعلّمت ❌ تخلف، هتتضاف نفس المراجعة لليوم التالي تلقائياً مع حفظ التخلف في يومه الأصلي؛ وبعد إنجازها ترجع لمدتها المعتادة." },
   { title:"✎ التعديل",
-    text:"أي مطلوب تقدر تعدّله: اضغط على علامة ✎ جنبه في اللوحة، أو زر «تعديل» من صفحة الشخص. تغيّر المقدار (السور والآيات) أو مدة التكرار أو اليوم أو النوع." },
+    text:"أي مطلوب تقدر تعدّله منفرداً من ✎. ولتعديل عدة مطلوبات مرة واحدة اضغط «تحديد عدة مهام» في اللوحة أو صفحة الشخص، اختر المهام ثم «تعديل المحدد». فعّل فقط الحقول التي تريد تغييرها." },
   { target:"#navSync", title:"☁️ كودك",
     text:"التطبيق بيعملك كود تلقائي أول ما تفتحه، وبيفضل ظاهر جنب اسم التطبيق فوق. أي جهاز تاني يدخل بنفس الكود هيشوف نفس البيانات ويتزامن معاك. الكود ما بيتشالش — تقدر تبدّله بكود تاني بس." },
   { target:"#navHelp", title:"❓ محتاج الشرح تاني؟",
