@@ -867,7 +867,7 @@ function saveBulkEdit(){
     const st=+document.getElementById("bulkSurahTo").value;
     const from=+document.getElementById("bulkFrom").value;
     const to=+document.getElementById("bulkTo").value;
-    if(!Number.isInteger(sf)||!Number.isInteger(st)||sf<0||st>=SURAHS.length||sf>st
+    if(!Number.isInteger(sf)||!Number.isInteger(st)||sf<0||st<0||sf>=SURAHS.length||st>=SURAHS.length||sf>st
       ||!Number.isInteger(from)||from<1||from>SURAHS[sf][1]
       ||!Number.isInteger(to)||to<1||to>SURAHS[st][1]
       ||(sf===st&&from>to)){
@@ -903,8 +903,8 @@ function saveBulkEdit(){
     }));
   }
   const updateDescendants=descendants.size>0 && confirm(
-    "هناك "+descendants.size+" مراجعة معلّقة متولّدة من المهام المحددة.\\n"+
-    "هل تريد نقل تعديلات الشخص والمقدار والتكرار إليها أيضاً؟\\n"+
+    "هناك "+descendants.size+" مراجعة معلّقة متولّدة من المهام المحددة.\n"+
+    "هل تريد نقل تعديلات الشخص والمقدار والتكرار إليها أيضاً؟\n"+
     "اختيار «إلغاء» هنا سيُبقيها كما هي ويعدّل المهام المحددة فقط."
   );
   withScrollPreserved(()=>{
@@ -919,7 +919,6 @@ function saveBulkEdit(){
       descendants.forEach((parents,id)=>{
         const child=state.assignments.find(a=>a.id===id);
         if(!child) return;
-        const parent=parents[parents.length-1];
         if(on("bulkPersonOn")) child.personId=patch.personId;
         if(on("bulkRangeOn")){
           child.surahFrom=patch.surahFrom; child.surahTo=patch.surahTo; child.surah=patch.surah;
@@ -936,7 +935,19 @@ function saveBulkEdit(){
     if(changeStatus||on("bulkDateOn")||on("bulkRepeatOn")||on("bulkTypeOn")){
       targets.forEach(a=>{
         const st=getStatus(a);
-        if((st==="done" && (+a.repeatDays||0)>0)||(st==="absent"&&a.assignType==="review")) spawnRepeat(a);
+        const repeats=(st==="done" && (+a.repeatDays||0)>0)||(st==="absent"&&a.assignType==="review");
+        // لا نحذف أو نغيّر موعد مراجعة اختارها المستخدم صراحةً ضمن المجموعة.
+        if(a.spawnedId && targetSet.has(a.spawnedId)){
+          if(!repeats){
+            const child=state.assignments.find(x=>x.id===a.spawnedId);
+            if(child && child.parentId===a.id){
+              child.parentId=null; child.autoGen=false; child.retryAfterAbsence=false;
+              child.rootId=child.id;
+              chainChildren(child.id).forEach(c=>{c.rootId=child.id;});
+            }
+            a.spawnedId=null;
+          }
+        } else if(repeats) spawnRepeat(a);
         else removeSpawn(a);
       });
     }
@@ -956,7 +967,7 @@ function renderBoard(){
   let h=`<div class="week-nav"><button onclick="shiftWeek(1)">‹ التالي</button>
     <span class="label">أسبوع ${weekLabel(selectedWeek)}${isCur?" (الحالي)":""}</span>
     <button onclick="shiftWeek(-1)">السابق ›</button></div>`;
-  if(!isCur) h+=`<div style="text-align:center;margin-bottom:10px"><button class="ghost" onclick="selectedWeek=weekStartStr(new Date());render()">↩ رجوع للأسبوع الحالي</button></div>`;
+  if(!isCur) h+=`<div style="text-align:center;margin-bottom:10px"><button class="ghost" onclick="selectedWeek=weekStartStr(new Date());multiMode=false;selectedAssignIds.clear();render()">↩ رجوع للأسبوع الحالي</button></div>`;
   const absent=wa.filter(a=>getStatus(a)==="absent").length;
   const newCount=wa.filter(a=>(a.assignType||"new")==="new").length;
   const reviewCount=wa.filter(a=>a.assignType==="review").length;
