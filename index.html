@@ -168,6 +168,17 @@ button.edit:hover{background:var(--blue-light);}
   padding:8px 14px; border-radius:8px; cursor:pointer; font-size:.95rem;}
 #navHelp:hover{background:rgba(255,255,255,.32);}
 
+.recitation-actions{display:inline-flex;gap:3px;align-items:center}
+.recitation-actions button{border:1px solid var(--line);background:#fff;border-radius:6px;padding:2px 7px;cursor:pointer;font-size:.9rem}
+.rating-picker{display:flex;gap:3px;align-items:stretch;max-width:100%;margin:3px 0}
+.rating-picker button{min-width:0;flex:1;border:1px solid currentColor;border-radius:6px;padding:4px 3px;font-size:.68rem;cursor:pointer;white-space:nowrap;background:#f3f5f4;color:#40534a}
+.rating-picker small{display:block;font-size:.6rem}
+.rating-picker .rating-reset{background:#fde8e8;color:#a52a20}
+.rating-picker .rating-hard{background:#fff0dd;color:#9c5100}
+.rating-picker .rating-easy{background:#e6f4ec;color:#155c34}
+.rating-result{font-size:.65rem;color:var(--muted)}
+.assign-item{flex-wrap:wrap}.assign-item .rating-picker{flex-basis:100%;max-width:370px}
+.rating-picker button[aria-label="إلغاء التقييم"]{flex:0 0 24px}
 /* ═══════ تحديد عدة مطلوبات والتعديل الجماعي ═══════ */
 .multi-bar{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:8px 0 12px;}
 .multi-bar .count{font-size:.85rem;color:var(--green-dark);font-weight:700;margin-inline:4px;}
@@ -239,7 +250,10 @@ button.edit:hover{background:var(--blue-light);}
   </div>
 
   <div class="repeat-box">
-    <div class="box-title">🔁 التكرار</div>
+    <div class="box-title">🔁 المراجعة التلقائية</div>
+    <div class="field"><label for="aScheduleMode">نظام المراجعة</label><select id="aScheduleMode" onchange="updateScheduleFields()"><option value="auto">تلقائي حسب جودة التسميع</option><option value="off">بدون تكرار</option></select></div>
+    <div class="hint">أول مراجعة للحفظ الجديد بعد يوم. يمكنك تعديل تاريخ أي مراجعة من حقل التاريخ.</div>
+    <div id="legacyIntervalFields">
     <div class="field">
       <label id="aRepeatLbl">تظهر كمراجعة بعد كام يوم؟</label>
       <input type="number" id="aRepeat" min="0" max="365" value="0">
@@ -261,6 +275,7 @@ button.edit:hover{background:var(--blue-light);}
     </div>
   </div>
 
+  </div>
   <div class="row" style="justify-content:flex-end; margin-top:8px">
     <button class="ghost" onclick="closeDialog()">إلغاء</button>
     <button class="primary" id="dlgSaveBtn" onclick="saveAssignment()">حفظ</button>
@@ -306,8 +321,8 @@ button.edit:hover{background:var(--blue-light);}
     <div id="bulkStatusGroup" class="bulk-control"><select id="bulkStatus">
       <option value="pending">⬜ لم يسمّع</option>
       <option value="done">✅ سمّع</option>
-      <option value="absent">❌ تخلف</option>
-    </select></div>
+      <option value="absent">❌ لم أفعلها</option>
+    </select><label for="bulkRating">جودة التسميع عند اختيار «سمّع»</label><select id="bulkRating"><option value="medium">متوسط</option><option value="hard">صعب</option><option value="easy">سهل</option><option value="reset">تصفير العداد — محاولة غير ناجحة</option></select></div>
   </div>
   <div class="row" style="justify-content:flex-end;margin-top:12px">
     <button class="ghost" onclick="closeBulkDialog()">إلغاء</button>
@@ -348,6 +363,7 @@ let currentAssignType = "new";
 let multiMode = false;
 const selectedAssignIds = new Set();
 let bulkTargetIds = [];
+let ratingTarget = null;
 
 /* ═══════════ أدوات الأسابيع (يبدأ السبت) ═══════════ */
 function weekStartOf(d){ const x=new Date(d); x.setDate(x.getDate()-(x.getDay()+1)%7); x.setHours(0,0,0,0); return x; }
@@ -369,6 +385,55 @@ let syncInterval = null;
 let syncToken = 0;
 let lastPushToken = 0;
 let syncStatus = "off";
+let localSnapshot={people:[],assignments:[]};
+let dirtyChanges={people:{},assignments:{}};
+let pushing=false;
+function cloneData(value){return JSON.parse(JSON.stringify(value));}
+function trackLocalChanges(){
+  for(const kind of ["people","assignments"]){
+    const before=new Map(localSnapshot[kind].map(x=>[x.id,x]));
+    const after=new Map(state[kind].map(x=>[x.id,x]));
+    for(const [id,item] of after) if(JSON.stringify(item)!==JSON.stringify(before.get(id))) dirtyChanges[kind][id]=cloneData(item);
+    for(const id of before.keys()) if(!after.has(id)) dirtyChanges[kind][id]={__deleted:true,preserveCompleted:kind==="assignments" && before.get(id).autoGen && getStatus(before.get(id))==="pending",parentId:before.get(id).parentId||null};
+  }
+  localSnapshot=cloneData(state);
+  persistDirty();
+}
+function persistDirty(){localStorage.setItem("tasmee-pending",JSON.stringify({code:syncCode||localStorage.getItem("tasmee-sync-code"),changes:dirtyChanges}));}
+function hasDirty(){return Object.values(dirtyChanges).some(items=>Object.keys(items).length);}
+function mergeChanges(remote,changes){
+  const merged={};
+  for(const kind of ["people","assignments"]){
+    const items=new Map((remote[kind]||[]).map(x=>[x.id,x]));
+    for(const [id,value] of Object.entries(changes[kind])){
+      // A losing stale parent update must not reschedule/delete its pending successor.
+      const parentId=value?.parentId;
+      const parentChange=parentId && changes.assignments[parentId];
+      const remoteParent=parentId && (remote.assignments||[]).find(a=>a.id===parentId);
+      if(kind==="assignments" && parentChange && !parentChange.__deleted && remoteParent
+        && (remoteParent.updatedAt||0)>(parentChange.updatedAt||0)
+        && (value.__deleted || (value.autoGen && getStatus(value)==="pending"))) continue;
+      if(value===null || value.__deleted){
+        const current=items.get(id);
+        if(!(value?.preserveCompleted && current && getStatus(current)!=="pending")) items.delete(id);
+      } else {
+        const current=items.get(id);
+        if(kind==="assignments" && current){
+          const history=[...(current.learningHistory||[]),...(value.learningHistory||[])];
+          const unique=[...new Map(history.map(event=>[JSON.stringify(event),event])).values()];
+          const winner=(value.updatedAt||0)>=(current.updatedAt||0)?value:current;
+          items.set(id,unique.length?{...winner,learningHistory:unique}:winner);
+        } else if(!current || (value.updatedAt||0)>=(current.updatedAt||0)) items.set(id,value);
+      }
+    }
+    merged[kind]=[...items.values()];
+  }
+  return merged;
+}
+function acceptRemote(remote){
+  state=mergeChanges(remote,dirtyChanges); localSnapshot=cloneData(state); saveLocal();
+}
+
 
 try {
   firebase.initializeApp({
@@ -389,21 +454,22 @@ async function startSyncWithCode(code){
   code = code.toUpperCase().trim();
   if(code.length < 4){ alert("الكود لازم يكون 4 حروف على الأقل"); return; }
   if(!db){ alert("Firebase مش شغال — تأكد من الإنترنت"); return; }
-  syncCode = code;
+  dirtyChanges={people:{},assignments:{}};
+  syncCode = code; persistDirty();
   localStorage.setItem("tasmee-sync-code", code);
   syncStatus = "waiting"; render();
   try {
     const snap = await docRef().get();
     if(snap.exists){
       const d = snap.data();
-      state.people = d.people || []; state.assignments = d.assignments || [];
+      acceptRemote(d);
       syncToken = d.syncToken || 0; lastPushToken = syncToken;
     } else {
       state = {people:[], assignments:[]};
       syncToken = 1; lastPushToken = 1;
       await docRef().set({people:[], assignments:[], syncToken:1, updatedAt:Date.now()});
     }
-    saveLocal(); syncStatus = "on"; render(); beginPolling();
+    localSnapshot=cloneData(state); saveLocal(); syncStatus = "on"; render(); beginPolling();
   } catch(e){
     console.error("Sync error:", e);
     syncStatus = "error"; render();
@@ -425,10 +491,11 @@ async function autoCreateCode(keepData){
     if(!code) code = genCode();
     if(!keepData) state = {people:[], assignments:[]};
     syncCode = code;
+    dirtyChanges={people:{},assignments:{}}; persistDirty();
     localStorage.setItem("tasmee-sync-code", code);
     syncToken = 1; lastPushToken = 1;
     await docRef().set({people:state.people, assignments:state.assignments, syncToken:1, updatedAt:Date.now()});
-    saveLocal(); syncStatus = "on"; render(); beginPolling();
+    localSnapshot=cloneData(state); saveLocal(); syncStatus = "on"; render(); beginPolling();
   } catch(e){
     console.error("Auto code failed:", e);
     syncStatus = "error"; render();
@@ -444,14 +511,15 @@ async function bootSync(){
       const snap = await docRef().get();
       if(snap.exists){
         const d = snap.data();
-        state.people = d.people || []; state.assignments = d.assignments || [];
+        acceptRemote(d);
         syncToken = d.syncToken || 0; lastPushToken = syncToken;
         saveLocal();
       } else {
         syncToken = 1; lastPushToken = 1;
         await docRef().set({people:state.people, assignments:state.assignments, syncToken:1, updatedAt:Date.now()});
       }
-      syncStatus = "on"; render(); beginPolling();
+      localSnapshot=cloneData(state); syncStatus = "on"; render(); beginPolling();
+      if(hasDirty()) pushToFirebase();
     } catch(e){
       console.error("Restore sync failed:", e);
       syncStatus = "error"; render();
@@ -468,35 +536,44 @@ function beginPolling(){
 }
 
 async function syncTick(){
-  if(!syncCode || !db) return;
+  if(!syncCode || !db || pushing) return;
+  if(hasDirty()){ await pushToFirebase(); return; }
+  const code=syncCode;
   try {
-    const snap = await docRef().get();
-    if(!snap.exists) return;
-    const remote = snap.data();
-    const rt = remote.syncToken || 0;
-    if(rt > syncToken){
-      state.people = remote.people || []; state.assignments = remote.assignments || [];
-      syncToken = rt; lastPushToken = rt; saveLocal(); render();
-    } else if(syncToken > lastPushToken){
-      await pushToFirebase();
+    const snap=await docRef().get();
+    if(code!==syncCode || !snap.exists || pushing) return;
+    const remote=snap.data();
+    if(hasDirty()){ await pushToFirebase(); return; }
+    if((remote.syncToken||0)!==syncToken){
+      acceptRemote(remote); syncToken=remote.syncToken||0; lastPushToken=syncToken; render();
     }
-    if(syncStatus !== "on"){ syncStatus = "on"; render(); }
-  } catch(e){
-    console.error("Sync tick error:", e);
-    if(syncStatus !== "error"){ syncStatus = "error"; render(); }
-  }
+    if(syncStatus!=="on"){syncStatus="on";render();}
+  } catch(e){ console.error("Sync tick error:",e); syncStatus="error"; render(); }
 }
-
 async function pushToFirebase(){
-  if(!syncCode || !db) return;
+  if(!syncCode || !db || pushing || !hasDirty()) return;
+  pushing=true;
+  const code=syncCode, ref=docRef(), changes=cloneData(dirtyChanges);
   try {
-    await docRef().set({people:state.people, assignments:state.assignments, syncToken:syncToken, updatedAt:Date.now()});
-    lastPushToken = syncToken; syncStatus = "on";
-  } catch(e){ console.error("Push failed:", e); syncStatus = "error"; }
+    const result=await db.runTransaction(async tx=>{
+      const snap=await tx.get(ref), remote=snap.exists?snap.data():{people:[],assignments:[]};
+      const merged=mergeChanges(remote,changes);
+      const token=(remote.syncToken||0)+1;
+      tx.set(ref,{...merged,syncToken:token,updatedAt:Date.now()});
+      return {...merged,syncToken:token};
+    });
+    if(code!==syncCode) return;
+    for(const kind of ["people","assignments"]) for(const [id,value] of Object.entries(changes[kind])){
+      if(JSON.stringify(dirtyChanges[kind][id])===JSON.stringify(value)) delete dirtyChanges[kind][id];
+    }
+    persistDirty(); acceptRemote(result);
+    syncToken=result.syncToken; lastPushToken=syncToken; syncStatus="on"; render();
+  } catch(e){ console.error("Push failed:",e); syncStatus="error"; }
+  finally{ pushing=false; }
+  if(code===syncCode && syncStatus==="on" && hasDirty()) pushToFirebase();
 }
-
 function localChange(){
-  syncToken++; saveLocal(); render();
+  trackLocalChanges(); syncToken++; saveLocal(); render();
   if(syncCode && db) pushToFirebase();
 }
 
@@ -506,6 +583,11 @@ function loadLocal(){
   catch(e){ state={people:[],assignments:[]}; }
   if(!state.people) state.people=[];
   if(!state.assignments) state.assignments=[];
+  localSnapshot=cloneData(state);
+  try{
+    const pending=JSON.parse(localStorage.getItem("tasmee-pending"));
+    if(pending?.code===localStorage.getItem("tasmee-sync-code") && pending?.changes?.people && pending?.changes?.assignments) dirtyChanges=pending.changes;
+  }catch(e){}
 }
 function saveLocal(){ localStorage.setItem("tasmee-data", JSON.stringify(state)); }
 function uid(){ return crypto.randomUUID ? crypto.randomUUID() : Date.now()+"-"+Math.random(); }
@@ -513,74 +595,113 @@ function uid(){ return crypto.randomUUID ? crypto.randomUUID() : Date.now()+"-"+
 /* ═══════════ عمليات البيانات ═══════════ */
 function opAddPerson(name){ state.people.push({id:uid(), name, createdAt:Date.now()}); localChange(); }
 function opDeletePerson(id){ state.people=state.people.filter(p=>p.id!==id); state.assignments=state.assignments.filter(a=>a.personId!==id); localChange(); }
-function opAddAssignment(a){ a.id=uid(); state.assignments.push(a); localChange(); }
+function opAddAssignment(a){ a.scheduleMode ??= "auto"; a.id=uid(); state.assignments.push(a); localChange(); }
 function getStatus(a){ return a.status||(a.done?"done":"pending"); }
-function opCycleStatus(id){
-  const a=state.assignments.find(x=>x.id===id); if(!a) return;
-  const cur=getStatus(a);
-  const next = cur==="pending"?"done":cur==="done"?"absent":"pending";
-  a.status=next; a.done=(next==="done"); a.updatedAt=Date.now();
-  // التسميع الناجح يتكرر حسب المدة، والمراجعة الفائتة تعاد في اليوم التالي.
-  if(next==="done" || (next==="absent" && a.assignType==="review")) spawnRepeat(a);
-  else removeSpawn(a);
+// Opening/cancelling the picker never changes persisted learning data.
+function opCycleStatus(id){ toggleRating(id); }
+function toggleRating(id){
+  ratingTarget=ratingTarget?.id===id?null:{id,version:JSON.stringify(state.assignments.find(a=>a.id===id))};
+  render();
+}
+function cancelRating(){ ratingTarget=null; render(); }
+const RATINGS={reset:["تصفير العداد",1],hard:["صعب",1.2],medium:["متوسط",2],easy:["سهل",3]};
+function autoReview(a){ return a.scheduleMode==="auto" || (a.scheduleMode!=="off" && +a.repeatDays>0); }
+function previousInterval(a){ return Math.max(1,Math.round(+a.intervalDays||+a.repeatDays||+a.nextRepeat||1)); }
+function nextInterval(a,rating){
+  if(rating==="reset" || a.assignType!=="review") return 1;
+  return Math.max(1,Math.round(previousInterval(a)*RATINGS[rating][1]));
+}
+function recordStatus(a,status,rating=null,schedule=true){
+  const now=Date.now(), performedOn=toStr(new Date(now));
+  const previous={status:getStatus(a),rating:a.rating||null,performedAt:a.performedAt||null,
+    previousIntervalDays:a.previousIntervalDays||null,nextIntervalDays:a.nextIntervalDays||null};
+  a.status=status; a.done=status==="done"; a.rating=rating;
+  a.performedAt=rating?now:null;
+  a.performedOn=rating?performedOn:null;
+  a.statusChangedOn=performedOn;
+  a.algorithmVersion=1;
+  a.previousIntervalDays=previousInterval(a);
+  a.nextIntervalDays=rating?nextInterval(a,rating):null;
+  a.attempted=!!rating; a.successful=rating?rating!=="reset":null;
+  a.learningHistory=[...(a.learningHistory||[]),{...previous,eventId:uid(),changedAt:now,toStatus:status,toRating:rating,performedAt:a.performedAt,
+    intervalBefore:a.previousIntervalDays,intervalAfter:a.nextIntervalDays,attempted:a.attempted,successful:a.successful}];
+  a.updatedAt=now;
+  if(schedule){ if(status==="pending") removeSpawn(a); else spawnRepeat(a); }
+}
+function rateAssignment(id,rating){
+  const a=state.assignments.find(x=>x.id===id);
+  if(!a || !RATINGS[rating] || ratingTarget?.id!==id) return;
+  if(ratingTarget.version!==JSON.stringify(a)){
+    ratingTarget=null; render(); alert("تغيرت الفقرة أثناء المزامنة. افتح التقييم من جديد."); return;
+  }
+  ratingTarget=null;
+  recordStatus(a,rating==="reset"?"failed":"done",rating);
   localChange();
+}
+function markAbsent(id){
+  const a=state.assignments.find(x=>x.id===id); if(!a) return;
+  ratingTarget=null; recordStatus(a,getStatus(a)==="absent"?"pending":"absent"); localChange();
+}
+function undoRecitation(id){
+  const a=state.assignments.find(x=>x.id===id); if(!a) return;
+  ratingTarget=null; recordStatus(a,"pending"); localChange();
+}
+function ratingControls(a){
+  const st=getStatus(a);
+  let h=`<span class="recitation-actions"><button type="button" title="تقييم التسميع" aria-label="تقييم التسميع" onclick="event.stopPropagation();toggleRating('${a.id}')">✓</button><button type="button" title="لم أفعلها" aria-label="لم أفعلها" onclick="event.stopPropagation();markAbsent('${a.id}')">✕</button>`;
+  if(st!=="pending") h+=`<button type="button" title="التراجع عن الحالة" aria-label="التراجع عن الحالة" onclick="event.stopPropagation();undoRecitation('${a.id}')">↶</button>`;
+  h+=`</span>`;
+  if(ratingTarget?.id===a.id){
+    h+=`<span class="rating-picker" role="group" aria-label="جودة التسميع" onclick="event.stopPropagation()">`;
+    for(const [key,[label]] of Object.entries(RATINGS)){
+      const days=nextInterval(a,key);
+      h+=`<button type="button" class="rating-${key}" onclick="rateAssignment('${a.id}','${key}')">${label}<small>${autoReview(a)?(days===1?"بعد يوم":"بعد "+days+" يومًا"):"بدون تكرار"}</small></button>`;
+    }
+    h+=`<button type="button" aria-label="إلغاء التقييم" onclick="cancelRating()">×</button></span>`;
+  }
+  if(a.rating) h+=`<small class="rating-result">${RATINGS[a.rating]?.[0]||""}</small>`;
+  return h;
 }
 function opDeleteAssignment(id){ state.assignments=state.assignments.filter(x=>x.id!==id); localChange(); }
 function opUpdateAssignment(id, patch){
   const a=state.assignments.find(x=>x.id===id); if(!a) return;
-  Object.assign(a, patch); a.updatedAt=Date.now(); localChange();
+  const scheduleChanged=("scheduleMode" in patch && patch.scheduleMode!==(autoReview(a)?"auto":"off"));
+  Object.assign(a, patch); a.updatedAt=Date.now();
+  if(getStatus(a)!=="pending" && scheduleChanged) spawnRepeat(a);
+  localChange();
 }
 
 /* ═══════════ التكرار التلقائي ═══════════ */
 function addDaysStr(ds, n){ const d=new Date(ds+"T00:00:00"); d.setDate(d.getDate()+n); return toStr(d); }
 
-/* ✅ بعد المدة المحددة؛ ❌ المراجعة الفائتة في اليوم التالي مع حفظ سجل التخلف. */
+// One stable child ID per attempt: replaying a write or syncing cannot add another review.
 function spawnRepeat(a){
-  const retryAfterAbsence = getStatus(a)==="absent" && a.assignType==="review";
-  const r = retryAfterAbsence ? 1 : (+a.repeatDays || 0);
-  if(r <= 0) return;
-  const nextInt = (+a.nextRepeat || 0) > 0 ? +a.nextRepeat : (+a.repeatDays || 0);
-  const d = addDaysStr(aDate(a), r);
-  const wk = weekStartStr(new Date(d+"T00:00:00"));
-
-  // لو كانت المراجعة التالية قد تولّدت بعد ✅ ثم تغيرت إلى ❌، نغيّر
-  // موعد النسخة المعلقة نفسها بدل إنشاء نسخة مكررة أو المساس بسجل منجَز.
-  const existing = a.spawnedId && state.assignments.find(x=>x.id===a.spawnedId);
-  if(existing){
-    if(existing.autoGen && getStatus(existing)==="pending" && !existing.spawnedId){
-      existing.date=d;
-      existing.weekStart=wk;
-      existing.retryAfterAbsence=retryAfterAbsence;
-      existing.updatedAt=Date.now();
-    }
-    return;
-  }
-
-  const child = {
-    id: uid(),
-    personId: a.personId,
-    surahFrom: a.surahFrom, surahTo: a.surahTo, surah: a.surah,
-    fromAyah: a.fromAyah, toAyah: a.toAyah,
-    assignType: "review",
-    // التأجيل ليوم واحد لا يغيّر دورة المراجعة الأصلية بعد إنجازها.
-    repeatDays: nextInt, nextRepeat: nextInt,
-    date: d, weekStart: wk,
-    status: "pending", done: false,
-    parentId: a.id, rootId: a.rootId || a.id,
-    autoGen: true, retryAfterAbsence, createdAt: Date.now()
-  };
-  state.assignments.push(child);
-  a.spawnedId = child.id;
+  const st=getStatus(a), retryAfterAbsence=st==="absent" && a.assignType==="review";
+  if(!retryAfterAbsence && (!(st==="done"||st==="failed") || !autoReview(a))){ removeSpawn(a); return; }
+  const interval=retryAfterAbsence?previousInterval(a):(a.assignType!=="review"?1:(a.nextIntervalDays||(+a.repeatDays)||1));
+  const days=retryAfterAbsence?1:interval;
+  const baseDate=retryAfterAbsence?(a.statusChangedOn||aDate(a)):(a.performedOn||aDate(a));
+  const d=addDaysStr(baseDate,days);
+  const existing=state.assignments.find(x=>x.id===a.spawnedId)||state.assignments.find(x=>x.parentId===a.id);
+  if(existing && (getStatus(existing)!=="pending" || chainChildren(existing.id).length)) return;
+  const child=existing||{id:"review-"+a.id,parentId:a.id,rootId:a.rootId||a.id,
+    autoGen:true,status:"pending",done:false,createdAt:Date.now()};
+  // Do not enable repetition for a legacy non-repeating task deferred with ✕.
+  Object.assign(child,{personId:a.personId,surahFrom:a.surahFrom??a.surah??0,
+    surahTo:a.surahTo??a.surahFrom??a.surah??0,surah:a.surahFrom??a.surah??0,
+    fromAyah:a.fromAyah,toAyah:a.toAyah,assignType:"review",
+    scheduleMode:autoReview(a)?"auto":"off",intervalDays:interval,
+    repeatDays:autoReview(a)?interval:0,nextRepeat:autoReview(a)?interval:0,
+    date:d,weekStart:weekStartStr(new Date(d+"T00:00:00")),retryAfterAbsence,updatedAt:Date.now()});
+  if(!existing) state.assignments.push(child);
+  a.spawnedId=child.id;
 }
-
-/* إلغاء الحالة يحذف النسخة المعلقة فقط؛ التسميع الذي سُجّل لاحقاً لا يُحذف. */
 function removeSpawn(a){
-  if(!a.spawnedId) return;
-  const c = state.assignments.find(x=>x.id===a.spawnedId);
-  if(!c){ a.spawnedId = null; return; }
-  if(getStatus(c)==="pending" && !c.spawnedId){
-    state.assignments = state.assignments.filter(x=>x.id!==c.id);
-    a.spawnedId = null;
+  const c=state.assignments.find(x=>x.id===a.spawnedId)||state.assignments.find(x=>x.parentId===a.id);
+  if(!c){ a.spawnedId=null; return; }
+  // Completed/failed/absent descendants are historical records, never delete them here.
+  if(getStatus(c)==="pending" && !chainChildren(c.id).length){
+    state.assignments=state.assignments.filter(x=>x.id!==c.id); a.spawnedId=null;
   }
 }
 
@@ -623,12 +744,14 @@ function assignTypeClass(a){
 
 function repeatBadge(a){
   const r = +a.repeatDays || 0;
-  if(r <= 0) return "";
+  if(autoReview(a)) return `<span class="rep-badge">🔁 تلقائي</span>`;
+  if(r<=0) return "";
   const txt = r===1?"يوم" : r===2?"يومين" : r===7?"أسبوع" : r===14?"أسبوعين" : r===30?"شهر" : r+"ي";
   return `<span class="rep-badge" title="هيتكرر كمراجعة بعد ${r} يوم">🔁${txt}</span>`;
 }
 
 function repeatText(a){
+  if(autoReview(a)) return ` · 🔁 تلقائي (الفاصل ${previousInterval(a)} يوم)`;
   const r = +a.repeatDays || 0;
   if(r <= 0) return "";
   const nx = (+a.nextRepeat || 0) > 0 ? +a.nextRepeat : r;
@@ -652,7 +775,9 @@ function compareAssignmentsByMushaf(a,b){
 
 function sortedPeople(){ return [...state.people].sort((a,b)=>(a.createdAt||0)-(b.createdAt||0)); }
 
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&ratingTarget) cancelRating();});
 function go(v){
+  ratingTarget=null;
   multiMode=false; selectedAssignIds.clear();
   view = v;
   document.getElementById("navBoard").className  = v==="board" ? "active" : "";
@@ -833,7 +958,7 @@ function openBulkDialog(){
   bulkRangeHint();
   document.getElementById("bulkRepeat").value=+first.repeatDays||0;
   document.getElementById("bulkNextRepeat").value=+first.nextRepeat||0;
-  document.getElementById("bulkStatus").value=getStatus(first);
+  document.getElementById("bulkStatus").value=getStatus(first)==="failed"?"done":getStatus(first);
   BULK_FIELDS.forEach(([flag,group])=>{
     document.getElementById(flag).checked=false;
     setBulkEnabled(flag,group);
@@ -884,7 +1009,7 @@ function saveBulkEdit(){
       ||!Number.isInteger(next)||next<0||next>365){
       alert("عدد أيام التكرار لازم يكون عدداً صحيحاً بين ٠ و٣٦٥."); return;
     }
-    patch.repeatDays=rep; patch.nextRepeat=next;
+    patch.repeatDays=rep; patch.nextRepeat=next; patch.intervalDays=rep||1; patch.scheduleMode=rep>0?"auto":"off";
   }
   const changeStatus=on("bulkStatusOn");
   const chosenStatus=document.getElementById("bulkStatus").value;
@@ -911,7 +1036,7 @@ function saveBulkEdit(){
     const now=Date.now();
     targets.forEach(a=>{
       Object.assign(a,patch);
-      if(changeStatus){ a.status=chosenStatus; a.done=chosenStatus==="done"; }
+      if(changeStatus){ recordStatus(a,chosenStatus==="done"&&document.getElementById("bulkRating").value==="reset"?"failed":chosenStatus,chosenStatus==="done"?document.getElementById("bulkRating").value:null,false); }
       a.updatedAt=now;
     });
     if(updateDescendants){
@@ -926,16 +1051,17 @@ function saveBulkEdit(){
         }
         if(on("bulkRepeatOn")){
           const interval=patch.nextRepeat>0?patch.nextRepeat:patch.repeatDays;
-          child.repeatDays=interval; child.nextRepeat=interval;
+          child.repeatDays=interval; child.nextRepeat=interval; child.intervalDays=interval||1; child.scheduleMode=patch.scheduleMode;
         }
         child.updatedAt=now;
       });
     }
     // إعادة احتساب النسخ المعلّقة عند تغيير الحالة أو الجدولة، دون مساس بالمكتمل منها.
-    if(changeStatus||on("bulkDateOn")||on("bulkRepeatOn")||on("bulkTypeOn")){
+    if(changeStatus||on("bulkRepeatOn")){
       targets.forEach(a=>{
+        if(on("bulkRepeatOn") && a.rating) a.nextIntervalDays=nextInterval(a,a.rating);
         const st=getStatus(a);
-        const repeats=(st==="done" && (+a.repeatDays||0)>0)||(st==="absent"&&a.assignType==="review");
+        const repeats=((st==="done"||st==="failed") && autoReview(a))||(st==="absent"&&a.assignType==="review");
         // لا نحذف أو نغيّر موعد مراجعة اختارها المستخدم صراحةً ضمن المجموعة.
         if(a.spawnedId && targetSet.has(a.spawnedId)){
           if(!repeats){
@@ -969,9 +1095,10 @@ function renderBoard(){
     <button onclick="shiftWeek(-1)">السابق ›</button></div>`;
   if(!isCur) h+=`<div style="text-align:center;margin-bottom:10px"><button class="ghost" onclick="selectedWeek=weekStartStr(new Date());multiMode=false;selectedAssignIds.clear();render()">↩ رجوع للأسبوع الحالي</button></div>`;
   const absent=wa.filter(a=>getStatus(a)==="absent").length;
+  const failed=wa.filter(a=>getStatus(a)==="failed").length;
   const newCount=wa.filter(a=>(a.assignType||"new")==="new").length;
   const reviewCount=wa.filter(a=>a.assignType==="review").length;
-  if(wa.length) h+=`<div class="stats">✅ سمّع ${done} · ❌ تخلف ${absent} · من ${wa.length} مطلوب (🆕 ${newCount} جديد · 🔁 ${reviewCount} مراجعة)</div>`;
+  if(wa.length) h+=`<div class="stats">✅ سمّع ${done} · ❌ لم أفعلها ${absent} · 🔴 محاولة غير ناجحة ${failed} · من ${wa.length} مطلوب (🆕 ${newCount} جديد · 🔁 ${reviewCount} مراجعة)</div>`;
   h+=renderMultiToolbar();
   if(!state.people.length) return h+`<div class="card"><div class="empty">لسه مفيش أشخاص — روح لتبويب «الأشخاص» وضيف أصحابك 👋</div></div>`;
   const dates=weekDates(selectedWeek), todayStr=toStr(new Date());
@@ -987,13 +1114,13 @@ function renderBoard(){
       const cell=wa.filter(a=>a.personId===p.id&&aDate(a)===d).sort(compareAssignmentsByMushaf);
       h+=`<td><div class="cellchips">`;
       for(const a of cell){
-        const st=getStatus(a), icon=st==="done"?"✅":st==="absent"?"❌":"⬜";
+        const st=getStatus(a), icon=st==="done"?"✅":st==="failed"?"🔴":st==="absent"?"❌":"⬜";
         const tc=assignTypeClass(a);
         const chosen=selectedAssignIds.has(a.id);
         const clickAction=multiMode?`toggleMultiItem('${a.id}')`:`opCycleStatus('${a.id}')`;
         const checkbox=multiMode?`<input class="multi-check" type="checkbox" aria-label="تحديد ${esc(assignLabel(a))}" ${chosen?"checked":""} onclick="event.stopPropagation()" onchange="toggleMultiItem('${a.id}')">`:"";
         const actions=multiMode?"":`<span class="ed" title="تعديل" onclick="event.stopPropagation();openDialog(null,null,'${a.id}')">✎</span><span class="x" onclick="event.stopPropagation();delAssign('${a.id}')">×</span>`;
-        h+=`<span class="chip small ${st==="done"?"done":st==="absent"?"absent":""} ${tc} ${chosen&&multiMode?"multi-active":""}" onclick="${clickAction}" title="${multiMode?"اضغط للتحديد":"اضغط لتغيير الحالة"}">${checkbox} ${assignTypeLabel(a)} ${icon} ${esc(assignLabel(a))} ${repeatBadge(a)}${actions}</span>`;
+        h+=`<span class="chip small ${st==="done"?"done":(st==="absent"||st==="failed")?"absent":""} ${tc} ${chosen&&multiMode?"multi-active":""}" onclick="${clickAction}" title="${multiMode?"اضغط للتحديد":"اضغط لتغيير الحالة"}">${checkbox} ${assignTypeLabel(a)} ${icon} ${esc(assignLabel(a))} ${repeatBadge(a)}${actions}</span>${multiMode?"":ratingControls(a)}`;
       }
       h+=`<button class="addday" onclick="openDialog('${p.id}','${d}')">＋</button></div></td>`;
     }
@@ -1013,7 +1140,7 @@ function renderPeople(){
   if(!ps.length) h+=`<div class="empty">مفيش أشخاص لسه</div>`;
   for(const p of ps){
     const pa=state.assignments.filter(a=>a.personId===p.id);
-    h+=`<li><span class="person-name" onclick="go('person:${p.id}')">${esc(p.name)} <span class="hint">(✅ ${pa.filter(a=>getStatus(a)==="done").length} · ❌ ${pa.filter(a=>getStatus(a)==="absent").length} · من ${pa.length})</span></span>
+    h+=`<li><span class="person-name" onclick="go('person:${p.id}')">${esc(p.name)} <span class="hint">(✅ ${pa.filter(a=>getStatus(a)==="done").length} · ❌ ${pa.filter(a=>getStatus(a)==="absent").length} · 🔴 ${pa.filter(a=>getStatus(a)==="failed").length} · من ${pa.length})</span></span>
       <button class="danger" onclick="delPerson('${p.id}')">حذف</button></li>`;
   }
   h+=`</ul></div>`; return h;
@@ -1038,7 +1165,7 @@ function renderPerson(id){
     const chosen=multiMode&&selectedAssignIds.has(a.id);
     const personActions=multiMode
       ?`<input type="checkbox" class="multi-check" aria-label="تحديد ${esc(assignLabel(a))}" ${chosen?"checked":""} onclick="event.stopPropagation()" onchange="toggleMultiItem('${a.id}')">`
-      :`<button class="status-btn ${st}" onclick="opCycleStatus('${a.id}')">${st==="done"?"✅ سمّع":st==="absent"?"❌ تخلف":"⬜ لم يسمّع"}</button>
+      :`${ratingControls(a)}<small>${st==="failed"?"محاولة غير ناجحة":st==="done"?"سمّع":st==="absent"?"لم أفعلها":"لم يسمّع"}</small>
       <button class="edit" onclick="openDialog(null,null,'${a.id}')">✎ تعديل</button>
       <button class="danger" onclick="delAssign('${a.id}')">حذف</button>`;
     h+=`<div class="assign-item ${tc} ${multiMode?"multi-selectable":""} ${chosen?"multi-active":""}" ${multiMode?`onclick="toggleMultiItem('${a.id}')"`:""}><span>${assignTypeLabel(a)} ${esc(assignLabel(a))}
@@ -1107,6 +1234,9 @@ function setAssignType(t){
   if(wrap) wrap.style.display = (t === "new") ? "" : "none";
 }
 
+function updateScheduleFields(){
+  document.getElementById("legacyIntervalFields").style.display="none";
+}
 function setRepeat(n){
   const el = document.getElementById("aRepeat");
   if(el) el.value = n;
@@ -1165,6 +1295,8 @@ function openDialog(pid, date, editId){
     surahFromChanged();
     surahToChanged();
   }
+  document.getElementById("aScheduleMode").value=a?(autoReview(a)?"auto":"off"):"auto";
+  updateScheduleFields();
   dlg.showModal();
 }
 
@@ -1210,8 +1342,8 @@ function saveAssignment(){
     }
     if(!pid){ alert("اختار الشخص الأول"); return; }
 
-    const rep = Math.max(0, Math.min(365, +document.getElementById("aRepeat").value || 0));
-    const nxtRaw = Math.max(0, Math.min(365, +document.getElementById("aNextRepeat").value || 0));
+    const rep = Math.max(0, Math.round(+document.getElementById("aRepeat").value || 0));
+    const nxtRaw = Math.max(0, Math.round(+document.getElementById("aNextRepeat").value || 0));
     const nxt = (currentAssignType === "review") ? rep : nxtRaw;
     const dateInput = document.getElementById("aDay");
     const dateVal = dateInput.value;
@@ -1228,20 +1360,25 @@ function saveAssignment(){
       fromAyah: from,
       toAyah: to,
       assignType: currentAssignType,
-      repeatDays: rep,
+      scheduleMode:document.getElementById("aScheduleMode").value,
+      repeatDays: document.getElementById("aScheduleMode").value==="off"?0:(rep||1),
       nextRepeat: nxt,
       date: dateVal,
       weekStart: weekStartStr(new Date(dateVal+"T00:00:00"))
     };
 
     if(editingId){
-      const kids = chainChildren(editingId).filter(c=>getStatus(c)==="pending");
-      if(kids.length && confirm("في "+kids.length+" مراجعة لاحقة متولّدة من المطلوب ده.\nتحب أعدّل فيها المقدار ومدة التكرار كمان؟")){
-        const useInt = nxt > 0 ? nxt : rep;
+      const original=state.assignments.find(a=>a.id===editingId);
+      const rangeChanged=["surahFrom","surahTo","fromAyah","toAyah"].some(key=>data[key]!==original[key]);
+      const modeChanged=data.scheduleMode!==(autoReview(original)?"auto":"off");
+      const personChanged=data.personId!==original.personId;
+      const kids=chainChildren(editingId).filter(c=>getStatus(c)==="pending");
+      if(kids.length && (rangeChanged||modeChanged||personChanged) && confirm("تطبيق تغييرات الشخص والمقدار ونظام المراجعة على المراجعات المعلقة أيضاً؟")){
         kids.forEach(c=>{
-          c.surahFrom=surahFrom; c.surahTo=surahTo; c.surah=surahFrom;
-          c.fromAyah=from; c.toAyah=to;
-          c.repeatDays=useInt; c.nextRepeat=useInt;
+          if(rangeChanged){c.surahFrom=surahFrom;c.surahTo=surahTo;c.surah=surahFrom;c.fromAyah=from;c.toAyah=to;}
+          if(personChanged)c.personId=pid;
+          if(modeChanged){c.scheduleMode=data.scheduleMode;c.repeatDays=data.scheduleMode==="off"?0:previousInterval(c);}
+          c.updatedAt=Date.now();
         });
       }
       opUpdateAssignment(editingId, data);
@@ -1260,9 +1397,9 @@ const TOUR_STEPS = [
   { target:"#navPeople", title:"👥 الأشخاص",
     text:"أول خطوة: ضيف الأشخاص اللي هتتابعهم من التبويب ده. ولو ضغطت على اسم أي شخص هيظهرلك سجله الكامل بكل المطاليب وحالاتها." },
   { target:"#navBoard", title:"📋 اللوحة",
-    text:"دي الشاشة الرئيسية: جدول أسبوعي لكل شخص وكل يوم. اضغط ＋ في أي خلية عشان تضيف مطلوب حفظ (جديد 🆕 أو مراجعة 🔁)، واضغط على المطلوب نفسه عشان تغيّر حالته: ⬜ لم يسمّع ← ✅ سمّع ← ❌ تخلف." },
+    text:"دي الشاشة الرئيسية: جدول أسبوعي لكل شخص وكل يوم. اضغط ＋ في أي خلية عشان تضيف مطلوب حفظ (جديد 🆕 أو مراجعة 🔁)، واضغط ✓ ثم اختر جودة التسميع. ✕ تعني «لم أفعلها»، والسهم ↶ للتراجع." },
   { title:"🔁 التكرار التلقائي",
-    text:"وأنت بتضيف مطلوب، حدّد «التكرار». عند ✅ يتكرر بعد المدة المحددة كمراجعة. ولو كانت المهمة «مراجعة» وعلّمت ❌ تخلف، هتتضاف نفس المراجعة لليوم التالي تلقائياً مع حفظ التخلف في يومه الأصلي؛ وبعد إنجازها ترجع لمدتها المعتادة." },
+    text:"المراجعات الجديدة تلقائية: الحفظ الجديد يُراجع بعد يوم، ثم يتغير الفاصل بحسب تقييمك. التصفير يسجل محاولة غير ناجحة ويعيد الفاصل ليوم، أما ✕ فيؤجل المراجعة لليوم التالي دون تغيير الفاصل." },
   { title:"✎ التعديل",
     text:"أي مطلوب تقدر تعدّله منفرداً من ✎. ولتعديل عدة مطلوبات مرة واحدة اضغط «تحديد عدة مهام» في اللوحة أو صفحة الشخص، اختر المهام ثم «تعديل المحدد». فعّل فقط الحقول التي تريد تغييرها." },
   { target:"#navSync", title:"☁️ كودك",
