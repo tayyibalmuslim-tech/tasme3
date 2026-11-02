@@ -4,7 +4,7 @@ const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs'),http=require('node:http');
 const executablePath=process.env.TASME3_BROWSER_EXECUTABLE;
-for(const viewport of [{width:1366,height:900},{width:390,height:844}]) test(`RTL UI at ${viewport.width}px: rating, cancellation, undo, bulk edit, manual date`,{skip:!executablePath},async()=>{
+for(const viewport of [{width:1366,height:900},{width:390,height:844}]) test(`RTL UI at ${viewport.width}px: compact cards, rating, cancellation, bulk edit, manual date`,{skip:!executablePath},async()=>{
  const {chromium}=require('playwright');
  const server=http.createServer((req,res)=>{res.setHeader('Content-Type','text/html; charset=utf-8');res.end(fs.readFileSync('index.html'));});
  await new Promise(r=>server.listen(0,'127.0.0.1',r));
@@ -28,6 +28,10 @@ for(const viewport of [{width:1366,height:900},{width:390,height:844}]) test(`RT
   const chipBefore=await page.locator('.chip.small').boundingBox();
   await page.getByRole('button',{name:'تقييم التسميع',exact:true}).click();
   const chipAfter=await page.locator('.chip.small').boundingBox();
+  assert.ok(chipAfter.height<=44,'verse chip stays compact');
+  const tools=await page.locator('.chip-tools').boundingBox();
+  assert.ok(tools.x>=chipAfter.x && tools.x+tools.width<=chipAfter.x+chipAfter.width,'actions stay inside chip');
+  if(process.env.TASME3_SCREENSHOT_DIR) await page.screenshot({path:`${process.env.TASME3_SCREENSHOT_DIR}/tasme3-board-${viewport.width}.png`,fullPage:true});
   assert.equal(chipAfter.height,chipBefore.height,'popover must not expand the task');
   assert.equal(await page.locator('.chip.small .rating-picker').count(),0);
   assert.equal(await page.locator('#ratingPopover .rating-picker').count(),1);
@@ -43,8 +47,7 @@ for(const viewport of [{width:1366,height:900},{width:390,height:844}]) test(`RT
   await page.getByRole('button',{name:'إلغاء التقييم',exact:true}).click();assert.equal(await page.evaluate(()=>localStorage.getItem('tasmee-data')),before);
   await page.getByRole('button',{name:'تقييم التسميع',exact:true}).click();await page.locator('.rating-hard').click();
   let data=await page.evaluate(()=>JSON.parse(localStorage.getItem('tasmee-data')));assert.equal(data.assignments.length,2);assert.equal(data.assignments[1].intervalDays,12);
-  await page.getByRole('button',{name:'التراجع عن الحالة',exact:true}).click();
-  data=await page.evaluate(()=>JSON.parse(localStorage.getItem('tasmee-data')));assert.equal(data.assignments.length,1);
+  assert.equal(await page.getByRole('button',{name:'التراجع عن الحالة',exact:true}).count(),0);
   await page.getByRole('button',{name:'لم أفعلها',exact:true}).click();data=await page.evaluate(()=>JSON.parse(localStorage.getItem('tasmee-data')));assert.equal(data.assignments[1].intervalDays,10);assert.equal(data.assignments[0].attempted,false);
   await page.getByText('شخص تجريبي',{exact:true}).click();await page.getByRole('button',{name:'تقييم التسميع',exact:true}).first().click();assert.equal(await page.locator('.rating-picker').count(),1);
   await page.getByRole('button',{name:'إلغاء التقييم',exact:true}).click();
