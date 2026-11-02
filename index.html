@@ -168,6 +168,7 @@ button.edit:hover{background:var(--blue-light);}
   padding:8px 14px; border-radius:8px; cursor:pointer; font-size:.95rem;}
 #navHelp:hover{background:rgba(255,255,255,.32);}
 
+.chip.small{flex-wrap:wrap}
 .recitation-actions{display:inline-flex;gap:3px;align-items:center}
 .recitation-actions button{border:1px solid var(--line);background:#fff;border-radius:6px;padding:2px 7px;cursor:pointer;font-size:.9rem}
 .rating-picker{display:flex;gap:3px;align-items:stretch;max-width:100%;margin:3px 0}
@@ -179,6 +180,11 @@ button.edit:hover{background:var(--blue-light);}
 .rating-result{font-size:.65rem;color:var(--muted)}
 .assign-item{flex-wrap:wrap}.assign-item .rating-picker{flex-basis:100%;max-width:370px}
 .rating-picker button[aria-label="إلغاء التقييم"]{flex:0 0 24px}
+.rating-popover{position:fixed;z-index:1100;width:320px;max-width:calc(100vw - 16px);padding:8px;background:var(--card);border:1px solid var(--line);border-radius:10px;box-shadow:0 5px 22px #0003;direction:rtl}
+.rating-popover[hidden]{display:none}
+.rating-popover .rating-context{display:block;font-size:.75rem;font-weight:700;margin-bottom:5px}
+.rating-popover .rating-picker{margin:0}
+.chip.rating-selected{outline:2px solid var(--green);outline-offset:2px}
 /* ═══════ تحديد عدة مطلوبات والتعديل الجماعي ═══════ */
 .multi-bar{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:8px 0 12px;}
 .multi-bar .count{font-size:.85rem;color:var(--green-dark);font-weight:700;margin-inline:4px;}
@@ -210,6 +216,7 @@ button.edit:hover{background:var(--blue-light);}
 </header>
 
 <main><div id="view"></div></main>
+<div id="ratingPopover" class="rating-popover" role="dialog" aria-label="جودة التسميع" hidden></div>
 
 <dialog id="assignDialog">
   <h3 id="dlgTitle">إضافة مطلوب حفظ</h3>
@@ -651,17 +658,40 @@ function ratingControls(a){
   let h=`<span class="recitation-actions"><button type="button" title="تقييم التسميع" aria-label="تقييم التسميع" onclick="event.stopPropagation();toggleRating('${a.id}')">✓</button><button type="button" title="لم أفعلها" aria-label="لم أفعلها" onclick="event.stopPropagation();markAbsent('${a.id}')">✕</button>`;
   if(st!=="pending") h+=`<button type="button" title="التراجع عن الحالة" aria-label="التراجع عن الحالة" onclick="event.stopPropagation();undoRecitation('${a.id}')">↶</button>`;
   h+=`</span>`;
-  if(ratingTarget?.id===a.id){
-    h+=`<span class="rating-picker" role="group" aria-label="جودة التسميع" onclick="event.stopPropagation()">`;
-    for(const [key,[label]] of Object.entries(RATINGS)){
-      const days=nextInterval(a,key);
-      h+=`<button type="button" class="rating-${key}" onclick="rateAssignment('${a.id}','${key}')">${label}<small>${autoReview(a)?(days===1?"بعد يوم":"بعد "+days+" يومًا"):"بدون تكرار"}</small></button>`;
-    }
-    h+=`<button type="button" aria-label="إلغاء التقييم" onclick="cancelRating()">×</button></span>`;
-  }
   if(a.rating) h+=`<small class="rating-result">${RATINGS[a.rating]?.[0]||""}</small>`;
   return h;
 }
+function renderRatingPopover(){
+  const box=document.getElementById("ratingPopover");
+  const a=ratingTarget && state.assignments.find(a=>a.id===ratingTarget.id);
+  const anchor=a && [...document.querySelectorAll("[data-assignment-id]")].find(el=>el.dataset.assignmentId===a.id);
+  if(!a || !anchor || multiMode){box.hidden=true;ratingTarget=null;return;}
+  let h=`<span class="rating-context">${esc(assignLabel(a))}</span><span class="rating-picker" role="group" aria-label="جودة التسميع">`;
+  for(const [key,[label]] of Object.entries(RATINGS)){
+    const days=nextInterval(a,key);
+    h+=`<button type="button" class="rating-${key}" onclick="rateAssignment('${a.id}','${key}')">${label}<small>${autoReview(a)?(days===1?"بعد يوم":"بعد "+days+" يومًا"):"بدون تكرار"}</small></button>`;
+  }
+  h+=`<button type="button" aria-label="إلغاء التقييم" onclick="cancelRating()">×</button></span>`;
+  box.innerHTML=h;box.hidden=false;positionRatingPopover();
+}
+function positionRatingPopover(){
+  const box=document.getElementById("ratingPopover");
+  if(!ratingTarget || box.hidden)return;
+  const anchor=[...document.querySelectorAll("[data-assignment-id]")].find(el=>el.dataset.assignmentId===ratingTarget.id);
+  if(!anchor){box.hidden=true;return;}
+  const rect=anchor.getBoundingClientRect();
+  const viewportWidth=document.documentElement.clientWidth, viewportHeight=window.innerHeight;
+  if(rect.bottom<0 || rect.top>viewportHeight || rect.right<0 || rect.left>viewportWidth){cancelRating();return;}
+  const width=box.offsetWidth,height=box.offsetHeight;
+  box.style.left=Math.max(8,Math.min(rect.left+rect.width/2-width/2,viewportWidth-width-8))+"px";
+  const above=rect.top-height-8;
+  box.style.top=Math.max(8,Math.min(above>=8?above:rect.bottom+8,viewportHeight-height-8))+"px";
+}
+document.addEventListener("pointerdown",e=>{
+  if(ratingTarget && !e.target.closest("#ratingPopover") && !e.target.closest("[data-assignment-id]"))cancelRating();
+});
+window.addEventListener("scroll",positionRatingPopover,true);
+window.addEventListener("resize",positionRatingPopover);
 function opDeleteAssignment(id){ state.assignments=state.assignments.filter(x=>x.id!==id); localChange(); }
 function opUpdateAssignment(id, patch){
   const a=state.assignments.find(x=>x.id===id); if(!a) return;
@@ -821,6 +851,7 @@ function render(){
       }
     }
   }
+  renderRatingPopover();
 }
 
 /* ═══════════ شاشة المزامنة ═══════════ */
@@ -1120,7 +1151,7 @@ function renderBoard(){
         const clickAction=multiMode?`toggleMultiItem('${a.id}')`:`opCycleStatus('${a.id}')`;
         const checkbox=multiMode?`<input class="multi-check" type="checkbox" aria-label="تحديد ${esc(assignLabel(a))}" ${chosen?"checked":""} onclick="event.stopPropagation()" onchange="toggleMultiItem('${a.id}')">`:"";
         const actions=multiMode?"":`<span class="ed" title="تعديل" onclick="event.stopPropagation();openDialog(null,null,'${a.id}')">✎</span><span class="x" onclick="event.stopPropagation();delAssign('${a.id}')">×</span>`;
-        h+=`<span class="chip small ${st==="done"?"done":(st==="absent"||st==="failed")?"absent":""} ${tc} ${chosen&&multiMode?"multi-active":""}" onclick="${clickAction}" title="${multiMode?"اضغط للتحديد":"اضغط لتغيير الحالة"}">${checkbox} ${assignTypeLabel(a)} ${icon} ${esc(assignLabel(a))} ${repeatBadge(a)}${actions}</span>${multiMode?"":ratingControls(a)}`;
+        h+=`<span data-assignment-id="${esc(a.id)}" class="chip small ${ratingTarget?.id===a.id?"rating-selected":""} ${st==="done"?"done":(st==="absent"||st==="failed")?"absent":""} ${tc} ${chosen&&multiMode?"multi-active":""}" onclick="${clickAction}" title="${multiMode?"اضغط للتحديد":"اضغط لتغيير الحالة"}">${checkbox} ${assignTypeLabel(a)} ${icon} ${esc(assignLabel(a))} ${repeatBadge(a)}${multiMode?"":ratingControls(a)}${actions}</span>`;
       }
       h+=`<button class="addday" onclick="openDialog('${p.id}','${d}')">＋</button></div></td>`;
     }
@@ -1168,7 +1199,7 @@ function renderPerson(id){
       :`${ratingControls(a)}<small>${st==="failed"?"محاولة غير ناجحة":st==="done"?"سمّع":st==="absent"?"لم أفعلها":"لم يسمّع"}</small>
       <button class="edit" onclick="openDialog(null,null,'${a.id}')">✎ تعديل</button>
       <button class="danger" onclick="delAssign('${a.id}')">حذف</button>`;
-    h+=`<div class="assign-item ${tc} ${multiMode?"multi-selectable":""} ${chosen?"multi-active":""}" ${multiMode?`onclick="toggleMultiItem('${a.id}')"`:""}><span>${assignTypeLabel(a)} ${esc(assignLabel(a))}
+    h+=`<div data-assignment-id="${esc(a.id)}" class="assign-item ${tc} ${multiMode?"multi-selectable":""} ${chosen?"multi-active":""}" ${multiMode?`onclick="toggleMultiItem('${a.id}')"`:""}><span>${assignTypeLabel(a)} ${esc(assignLabel(a))}
         <span class="hint">— ${dayLabel(aDate(a))}${repeatText(a)}${a.retryAfterAbsence?" · إعادة بعد عدم التسميع":a.autoGen?" · مُرحّلة تلقائياً":""}</span></span>
       <span class="row">${personActions}</span></div>`;
   }

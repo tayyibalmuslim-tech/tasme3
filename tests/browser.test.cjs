@@ -20,11 +20,26 @@ for(const viewport of [{width:1366,height:900},{width:390,height:844}]) test(`RT
   });
   await page.goto(`http://127.0.0.1:${server.address().port}`);
   assert.equal(await page.locator('.rating-picker').count(),0);
+  assert.equal(await page.locator('.chip.small .recitation-actions').count(),1);
+  assert.equal(await page.locator('.cellchips > .recitation-actions').count(),0);
+  // Leave room above the task for its anchored popup on both viewport sizes.
+  await page.addStyleTag({content:'main{padding-top:100px}'});
   const before=await page.evaluate(()=>localStorage.getItem('tasmee-data'));
+  const chipBefore=await page.locator('.chip.small').boundingBox();
   await page.getByRole('button',{name:'تقييم التسميع',exact:true}).click();
+  const chipAfter=await page.locator('.chip.small').boundingBox();
+  assert.equal(chipAfter.height,chipBefore.height,'popover must not expand the task');
+  assert.equal(await page.locator('.chip.small .rating-picker').count(),0);
+  assert.equal(await page.locator('#ratingPopover .rating-picker').count(),1);
+  const popup=await page.locator('#ratingPopover').boundingBox();
+  assert.ok(popup.y+popup.height<=chipAfter.y,'popup above selected task');
+  assert.ok(popup.x>=0 && popup.x+popup.width<=viewport.width,'popup within viewport');
   assert.equal(await page.locator('.rating-picker button').count(),5);
   assert.match(await page.locator('.rating-hard').textContent(),/12/);assert.match(await page.locator('.rating-medium').textContent(),/20/);assert.match(await page.locator('.rating-easy').textContent(),/30/);
   const tops=await page.locator('.rating-picker button').evaluateAll(els=>els.map(el=>el.getBoundingClientRect().top));assert.ok(Math.max(...tops)-Math.min(...tops)<2,'ratings in one horizontal row');
+  await page.locator('header h1').click();
+  assert.equal(await page.locator('#ratingPopover').isVisible(),false);
+  await page.getByRole('button',{name:'تقييم التسميع',exact:true}).click();
   await page.getByRole('button',{name:'إلغاء التقييم',exact:true}).click();assert.equal(await page.evaluate(()=>localStorage.getItem('tasmee-data')),before);
   await page.getByRole('button',{name:'تقييم التسميع',exact:true}).click();await page.locator('.rating-hard').click();
   let data=await page.evaluate(()=>JSON.parse(localStorage.getItem('tasmee-data')));assert.equal(data.assignments.length,2);assert.equal(data.assignments[1].intervalDays,12);
