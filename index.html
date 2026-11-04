@@ -105,12 +105,18 @@ dialog label{display:block; font-size:.85rem; margin-bottom:4px; color:var(--mut
 
 .chip.small.type-new{border-right:3px solid var(--blue); background:var(--blue-light);}
 .chip.small.type-review{border-right:3px solid var(--purple); background:var(--purple-light);}
-.chip.small.type-new.done{background:#c8dff3;}
-.chip.small.type-review.done{background:#e0c8f3;}
+.chip.small.type-new.done, .chip.small.type-review.done{
+  background:var(--green-light); border-color:var(--green);
+  border-right-color:var(--green); color:var(--green-dark);
+}
 .chip.small.type-new.absent, .chip.small.type-review.absent{background:#fde8e8; border-right-color:var(--red);}
 
 .assign-item.type-new{border-right:4px solid var(--blue);}
 .assign-item.type-review{border-right:4px solid var(--purple);}
+.assign-item.type-new.done, .assign-item.type-review.done{
+  background:var(--green-light); color:var(--green-dark);
+  border-right-color:var(--green);
+}
 
 /* ═══════ التكرار والتعديل ═══════ */
 .chip .ed{color:var(--muted); font-weight:700; padding:0 2px;}
@@ -1207,7 +1213,7 @@ function renderPerson(id){
       :`${ratingControls(a)}<small>${st==="failed"?"محاولة غير ناجحة":st==="done"?"سمّع":st==="absent"?"لم أفعلها":"لم يسمّع"}</small>
       <button class="edit" onclick="openDialog(null,null,'${a.id}')">✎ تعديل</button>
       <button class="danger" onclick="delAssign('${a.id}')">حذف</button>`;
-    h+=`<div data-assignment-id="${esc(a.id)}" class="assign-item ${tc} ${multiMode?"multi-selectable":""} ${chosen?"multi-active":""}" ${multiMode?`onclick="toggleMultiItem('${a.id}')"`:""}><span>${assignTypeLabel(a)} ${esc(assignLabel(a))}
+    h+=`<div data-assignment-id="${esc(a.id)}" class="assign-item ${tc} ${st==="done"?"done":""} ${multiMode?"multi-selectable":""} ${chosen?"multi-active":""}" ${multiMode?`onclick="toggleMultiItem('${a.id}')"`:""}><span>${assignTypeLabel(a)} ${esc(assignLabel(a))}
         <span class="hint">— ${dayLabel(aDate(a))}${repeatText(a)}${a.retryAfterAbsence?" · إعادة بعد عدم التسميع":a.autoGen?" · مُرحّلة تلقائياً":""}</span></span>
       <span class="row">${personActions}</span></div>`;
   }
